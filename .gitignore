@@ -1,0 +1,40 @@
+# Dependencies and build
+node_modules/
+dist/
+build/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Logs and OS
+*.log
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+*.sublime-*
+
+# Only one MD file in repo: SIGNALS.md (structure + signal logic)
+*.md
+!SIGNALS.md
+!liquidityscan-web/docs/*.md
+!liquidityscan-web/docs/reference/**/*.md
+!liquidityscan-web/security-pentest/**/*.md
+!liquidityscan-web/knowledge/*.md
+!liquidityscan-web/knowledge/perplexity/*.md
+!liquidityscan-web/knowledge/**/*.md
+
+# Backend-specific (in case we run from root)
+liquidityscan-web/backend/node_modules/
+liquidityscan-web/backend/dist/
+liquidityscan-web/backend/.env
+
+# Optional: exclude cloudflared binary if too large
+# cloudflared.exe
+
+# Archives and Cursor IDE state
+*.zip
+.cursor/worktrees.json

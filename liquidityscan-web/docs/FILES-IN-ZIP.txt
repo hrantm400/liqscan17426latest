@@ -1,0 +1,33 @@
+ICT Bias — source bundle contents
+=================================
+Paths are relative to the `liquidityscan-web/` project root.
+
+Included in ict-bias-source.zip:
+  docs/ICT-BIAS-LOGIC.md
+  docs/FILES-IN-ZIP.txt
+  backend/src/signals/indicators/ict-bias.detect.ts
+  backend/src/signals/indicators/candle-types.ts
+  backend/src/signals/indicators/index.ts
+  backend/src/signals/scanners/ict-bias.scanner.ts
+  backend/src/signals/scanner.service.ts
+  backend/src/signals/signals.service.ts
+  backend/src/signals/lifecycle.service.ts
+  backend/src/signals/signal-state.service.ts
+  backend/src/signals/signals.module.ts
+  backend/prisma/schema.prisma
+
+Rebuild the zip from `liquidityscan-web/`:
+
+  zip -r docs/ict-bias-source.zip \
+    docs/ICT-BIAS-LOGIC.md \
+    docs/FILES-IN-ZIP.txt \
+    backend/src/signals/indicators/ict-bias.detect.ts \
+    backend/src/signals/indicators/candle-types.ts \
+    backend/src/signals/indicators/index.ts \
+    backend/src/signals/scanners/ict-bias.scanner.ts \
+    backend/src/signals/scanner.service.ts \
+    backend/src/signals/signals.service.ts \
+    backend/src/signals/lifecycle.service.ts \
+    backend/src/signals/signal-state.service.ts \
+    backend/src/signals/signals.module.ts \
+    backend/prisma/schema.prisma

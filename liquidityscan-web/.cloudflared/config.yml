@@ -1,0 +1,18 @@
+# Cloudflare Tunnel Configuration
+# This file configures the tunnel to expose local services
+
+tunnel: liquidityscan-dev
+credentials-file: .cloudflared/tunnel-credentials.json
+
+# Ingress rules - map external requests to local services
+ingress:
+  # Frontend (React/Vite) - Port 5173
+  - hostname: liquidityscan-dev.trycloudflare.com
+    service: http://localhost:5173
+  
+  # Backend API (NestJS) - Port 3001
+  - hostname: liquidityscan-api-dev.trycloudflare.com
+    service: http://localhost:3001
+  
+  # Catch-all rule (must be last)
+  - service: http_status:404

@@ -1,0 +1,445 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider      = "prisma-client-js"
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SignalStatus {
+  PENDING
+  ACTIVE
+  COMPLETED
+  EXPIRED
+  ARCHIVED
+}
+
+enum SignalResult {
+  WIN
+  LOSS
+}
+
+
+model User {
+  id                  String    @id @default(uuid())
+  email               String    @unique
+  name                String?
+  password            String?
+  googleId            String?   @unique
+  avatar              String?
+  isAdmin             Boolean   @default(false)
+  telegramId          String?   @unique
+  subscriptionId      String?
+  subscription        Subscription? @relation(fields: [subscriptionId], references: [id])
+  subscriptionExpiresAt DateTime?
+  subscriptionStatus  String    @default("none") // none, active, expired, cancelled
+  timezone            String?
+
+  // Pricing tier
+  tier              String    @default("FREE")  // FREE, PAID_MONTHLY, PAID_ANNUAL
+  dailyRsiUsed      Int       @default(0)
+  dailyBiasUsed     Int       @default(0)
+  dailyQuotaResetAt DateTime  @default(now())
+
+  // Affiliate
+  referrerId        String?   // userId of who referred this user
+  affiliateCode     String?   @unique  // unique code for sharing
+
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  payments            Payment[]
+  refreshTokens       RefreshToken[]
+  userSubscriptions   UserSubscription[]
+  alertSubscriptions  AlertSubscription[]
+  affiliate           Affiliate?
+  featureAccess       FeatureAccess[]
+  oauthCodes          OAuthAuthorizationCode[]
+
+  @@map("users")
+}
+
+// One-time OAuth redirect code; exchanged via POST /auth/oauth/exchange
+model OAuthAuthorizationCode {
+  id        String    @id @default(uuid())
+  code      String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([code])
+  @@map("oauth_authorization_codes")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("refresh_tokens")
+}
+
+model AlertSubscription {
+  id           String   @id @default(uuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  symbol       String   // e.g., "BTCUSDT"
+  strategyType String   // e.g., "SUPER_ENGULFING", "RSI_DIVERGENCE", "CRT"
+  timeframes   Json?    // subset of scanner TFs for this strategy; null = all allowed for that strategy
+  directions   Json?    // e.g., ["BUY","SELL"] — null means ALL
+  minWinRate   Float?   // reserved (unused); filters are timeframes + directions only
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, symbol, strategyType]) // Prevent duplicates
+  @@map("alert_subscriptions")
+}
+
+// One-time deep-link codes: t.me/bot?start=link_CODE
+model TelegramLinkCode {
+  code      String   @id
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("telegram_link_codes")
+}
+
+model Category {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  description String?
+  icon        String?
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("categories")
+}
+
+model Subscription {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?  @db.Text
+  tier          String   // SCOUT, APPRENTICE, SPECIALIST, STRATEGIST, GODFATHER
+  tierNumber    Int      @default(0) // 0-4 for sorting
+  price         Decimal  @db.Decimal(10, 2) // monthly price (legacy, use priceMonthly)
+  priceMonthly  Decimal  @db.Decimal(10, 2) // monthly price
+  priceYearly   Decimal? @db.Decimal(10, 2) // yearly price (optional)
+  duration      Int      @default(30) // in days
+  markets       Json?    // Available markets: ["crypto", "forex", "indices", "commodities"]
+  pairsLimit    Int?     // null = unlimited
+  timeframes    Json?    // Available timeframes: ["15m", "1H", "4H", "Daily"]
+  signalTypes   Json?    // Signal types: ["Standard", "REV+", "RUN+"]
+  features      Json?    // Array of features
+  limits        Json?    // Additional limits configuration
+  isPopular     Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  sortOrder     Int      @default(0)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  users         User[]
+  courses       Course[]
+  chapterSubscriptions ChapterSubscription[]
+  userSubscriptions UserSubscription[]
+
+  @@map("subscriptions")
+}
+
+model Payment {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  subscriptionId String? // Link to subscription if this is a subscription payment
+  amount        Decimal  @db.Decimal(10, 2)
+  currency      String   @default("USD")
+  status        String   @default("pending") // pending, completed, failed, refunded
+  paymentMethod String?  // crypto, card, etc
+  paymentId     String?  // External payment ID (e.g., NOWPayments)
+  paymentUrl    String?
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("payments")
+}
+
+model EmailLog {
+  id        String   @id @default(uuid())
+  to        String
+  subject   String
+  template  String?
+  status    String   @default("sent")
+  error     String?
+  sentAt    DateTime @default(now())
+
+  @@index([sentAt])
+  @@index([status])
+  @@map("email_logs")
+}
+
+model UserSubscription {
+  id            String   @id @default(uuid())
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subscriptionId String
+  subscription  Subscription @relation(fields: [subscriptionId], references: [id])
+  startDate     DateTime @default(now())
+  endDate       DateTime
+  status        String   @default("active") // active, expired, cancelled
+  paymentId     String?  // Link to payment
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("user_subscriptions")
+}
+
+model Course {
+  id             String        @id @default(uuid())
+  title          String
+  description    String?       @db.Text
+  coverUrl       String?
+  difficulty     String        @default("Beginner") // Beginner, Intermediate, Advanced
+  price          Decimal       @default(0) @db.Decimal(10, 2)
+  isFree         Boolean       @default(false)
+  subscriptionId String?
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
+  
+  chapters       Chapter[]
+  
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@map("courses")
+}
+
+model Chapter {
+  id             String        @id @default(uuid())
+  courseId       String
+  course         Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title          String
+  description    String?       @db.Text
+  coverUrl       String?
+  videoUrl       String?       // YouTube or Wistia preview video
+  difficulty     String        @default("Beginner") // Beginner, Intermediate, Advanced
+  price          Decimal       @default(0) @db.Decimal(10, 2)
+  isFree         Boolean       @default(true)
+  order          Int           @default(0)
+  
+  lessons        Lesson[]
+  subscriptions  ChapterSubscription[]
+  
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  @@map("chapters")
+}
+
+model ChapterSubscription {
+  id             String        @id @default(uuid())
+  chapterId      String
+  chapter        Chapter       @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  subscriptionId String
+  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+
+  @@unique([chapterId, subscriptionId])
+  @@map("chapter_subscriptions")
+}
+
+model Lesson {
+  id            String   @id @default(uuid())
+  chapterId     String
+  chapter       Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?  @db.Text
+  videoUrl      String
+  videoProvider String? // youtube | wistia
+  coverUrl      String?
+  order         Int      @default(0)
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("lessons")
+}
+
+model SuperEngulfingSignal {
+  id              String        @id
+  strategyType    String        @default("SUPER_ENGULFING")
+  symbol          String
+  timeframe       String
+  signalType      String
+  price           Decimal       @db.Decimal(20, 8)
+  detectedAt      DateTime
+  
+  // Existing Lifecycle Fields (kept for backward compat with other strategies)
+  lifecycleStatus SignalStatus  @default(PENDING)
+  result          SignalResult?
+  
+  // LEGACY SE TRACKING FIELDS (kept for backward compat)
+  direction       String?       // "BULL" or "BEAR" (legacy)
+  se_entry_zone   Float?        // Signal candle close (entry price) - legacy
+  se_sl           Float?        // Initial wick SL - legacy
+  se_tp1          Float?        // 2R target - legacy
+  se_tp2          Float?        // 3R target - legacy
+  se_current_sl   Float?        // Starts = se_sl - legacy
+  se_r_ratio_hit  Boolean       @default(false)  // Has 2R been reached? - legacy
+  se_close_price  Float?        // Actual price signal was closed at - legacy
+  se_close_reason String?       // "TP2", "SL", "OPPOSITE_REV", "EXPIRED" - legacy
+
+  candles_tracked Int           @default(0)
+  max_candles     Int           @default(20)
+  entryConfirmedAt DateTime?
+
+  // ============================================
+  // SE SCANNER V2 FIELDS (per new specification)
+  // ============================================
+  state           String?       @default("live")  // "live" or "closed" - only these two states
+  type_v2         String?       // always "se"
+  pattern_v2      String?       // one of 8: REV_BULLISH, REV_BEARISH, REV_PLUS_BULLISH, REV_PLUS_BEARISH, RUN_BULLISH, RUN_BEARISH, RUN_PLUS_BULLISH, RUN_PLUS_BEARISH
+  direction_v2    String?       // "bullish" or "bearish"
+  
+  entry_price     Float?        // se_candle.close - THE entry price
+  sl_price        Float?        // Original SL - NEVER changes after init
+  current_sl_price Float?       // Starts at sl_price, moves to entry_price after TP1 hit
+  tp1_price       Float?        // 1:1.5 RR target — close 50%
+  tp2_price       Float?        // 1:2 RR target — close 25%
+  tp3_price       Float?        // 1:3 RR target — close 25% (full win)
+  
+  tp1_hit         Boolean       @default(false)   // Has TP1 been reached?
+  tp2_hit         Boolean       @default(false)   // Has TP2 been reached?
+  tp3_hit         Boolean       @default(false)   // Has TP3 been reached?
+  
+  result_v2       String?       // "won" or "lost" - null while live
+  result_type     String?       // "tp1", "tp2", "tp3_full", "sl", "candle_expiry" - null while live
+  close_price     Float?        // The price at which signal closed (preset level or market price at expiry)
+  
+  candle_count    Int           @default(0)       // Starts at 0, increments on each candle close
+  
+  triggered_at    DateTime?     // When signal went live
+  closed_at_v2    DateTime?     // When signal closed - null while live
+  delete_at       DateTime?     // closed_at + 48h - when to hard delete
+
+  // ICT BIAS FIELDS
+  bias_direction    String?       // "BULL" or "BEAR"
+  bias_level        Float?        // The close price that confirmed bias
+  bias_result       String?       // "WIN" or "FAILED"
+  bias_validated_at DateTime?     // When next candle closed
+  
+  // Deprecated Fields
+  status          String        @default("ACTIVE")
+  outcome         String?
+
+  metadata        Json?
+  closedAt        DateTime?
+  closedPrice     Decimal?      @db.Decimal(20, 8)
+  pnlPercent      Float?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@index([strategyType, detectedAt(sort: Desc)])
+  @@index([strategyType, symbol, timeframe])
+  @@index([status])
+
+  @@map("super_engulfing_signals")
+}
+
+// ==========================================
+// AFFILIATE PROGRAM
+// ==========================================
+
+model Affiliate {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  code        String   @unique  // e.g. "TRADER123"
+  tier        String   @default("STANDARD")  // STANDARD(30%), ELITE(40%), AGENCY(20%)
+  totalSales  Int      @default(0)
+  totalEarned Float    @default(0)
+  cookieDays  Int      @default(90)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  referrals   AffiliateReferral[]
+  payouts     AffiliatePayout[]
+
+  @@map("affiliates")
+}
+
+model AffiliateReferral {
+  id             String   @id @default(uuid())
+  affiliateId    String
+  affiliate      Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  referredUserId String   @unique
+  paymentAmount  Float?
+  commission     Float?
+  status         String   @default("REGISTERED") // REGISTERED, CONVERTED, CHURNED
+  createdAt      DateTime @default(now())
+
+  @@map("affiliate_referrals")
+}
+
+model AffiliatePayout {
+  id          String   @id @default(uuid())
+  affiliateId String
+  affiliate   Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
+  amount      Float
+  currency    String   @default("USDT")
+  network     String   @default("TRC20")
+  walletAddr  String?
+  txHash      String?
+  status      String   @default("PENDING") // PENDING, PROCESSED, FAILED
+  createdAt   DateTime @default(now())
+
+  @@map("affiliate_payouts")
+}
+
+model FeatureAccess {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  feature   String    // super_engulfing, ict_bias, rsi_divergence, crt, telegram_alerts, academy, tools, watchlist, all
+  expiresAt DateTime? // null = lifetime
+  grantedBy String?   // admin userId who granted
+  createdAt DateTime  @default(now())
+
+  @@unique([userId, feature])
+  @@map("feature_access")
+}
+
+/// Singleton row (id = "singleton"). Global product flags.
+model AppConfig {
+  id                    String   @id @default("singleton")
+  launchPromoFullAccess Boolean  @default(false)
+  cisdPivotLeft         Int      @default(5)
+  cisdPivotRight        Int      @default(2)
+  cisdMinConsecutive    Int      @default(2)
+  updatedAt             DateTime @updatedAt
+
+  @@map("app_config")
+}
+
+model CandleSnapshot {
+  id        String   @id @default(uuid())
+  symbol    String
+  interval  String
+  candles   Json
+  updatedAt DateTime @updatedAt
+
+  @@unique([symbol, interval])
+  @@map("candle_snapshots")
+}

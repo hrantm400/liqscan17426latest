@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /app/
+Disallow: /api/
+Disallow: /socket.io/
+
+# Sitemap
+Sitemap: https://liquidityscan.io/sitemap.xml
+
+# Crawl-delay
+Crawl-delay: 1

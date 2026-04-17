@@ -1,0 +1,14 @@
+---
+description: After code changes, commit and push to origin
+alwaysApply: true
+---
+
+# Git at end of tasks
+
+When you finish implementing or fixing something in this repo:
+
+1. Run `git status` and stage all intended changes (never commit `.env` or secrets).
+2. Commit with a clear message (`type(scope): summary`).
+3. Push to `origin` on the current branch (usually `master`).
+
+If there is nothing to commit, say so briefly.

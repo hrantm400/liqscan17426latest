@@ -1,0 +1,66 @@
+import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
+import { ScheduleModule } from '@nestjs/schedule';
+import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { AppController } from './app.controller';
+import { AppService } from './app.service';
+import { PrismaModule } from './prisma/prisma.module';
+import { AuthModule } from './auth/auth.module';
+import { UsersModule } from './users/users.module';
+import { AdminModule } from './admin/admin.module';
+import { PaymentsModule } from './payments/payments.module';
+import { CoursesModule } from './courses/courses.module';
+import { SubscriptionsModule } from './subscriptions/subscriptions.module';
+import { CandlesModule } from './candles/candles.module';
+import { SignalsModule } from './signals/signals.module';
+import { TelegramModule } from './telegram/telegram.module';
+import { AlertsModule } from './alerts/alerts.module';
+import { PricingModule } from './pricing/pricing.module';
+import { AffiliateModule } from './affiliate/affiliate.module';
+import { RealtimeModule } from './realtime/realtime.module';
+import { MailModule } from './mail/mail.module';
+import { AppConfigModule } from './app-config/app-config.module';
+
+@Module({
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+      envFilePath: '.env',
+    }),
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 120,
+      },
+    ]),
+    ScheduleModule.forRoot(),
+    PrismaModule,
+    AuthModule,
+    UsersModule,
+    AdminModule,
+    PaymentsModule,
+    CoursesModule,
+    SubscriptionsModule,
+    CandlesModule,
+    SignalsModule,
+    TelegramModule,
+    AlertsModule,
+    PricingModule,
+    AffiliateModule,
+    RealtimeModule,
+    MailModule,
+    AppConfigModule,
+  ],
+  controllers: [AppController],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useExisting: JwtAuthGuard,
+    },
+  ],
+})
+export class AppModule { }
+
