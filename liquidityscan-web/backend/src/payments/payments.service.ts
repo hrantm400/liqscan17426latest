@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 
@@ -198,6 +199,20 @@ export class PaymentsService {
       throw new NotFoundException('Payment not found');
     }
 
+    // Idempotent replay guard: a second call for an already-completed payment
+    // must not re-run writes (protects against tron-scanner / admin / user retry races).
+    if (payment.status === 'completed') {
+      this.logger.warn(
+        `processSubscriptionPayment: ${paymentId} already completed — idempotent no-op`,
+      );
+      return {
+        success: true,
+        alreadyCompleted: true,
+        tier: payment.user?.tier,
+        expiresAt: payment.user?.subscriptionExpiresAt,
+      };
+    }
+
     if (payment.status !== 'pending') {
       throw new BadRequestException(`Payment is already ${payment.status}`);
     }
@@ -206,7 +221,6 @@ export class PaymentsService {
       throw new BadRequestException('This payment is not for a subscription');
     }
 
-    // Get subscription
     const subscription = await this.prisma.subscription.findUnique({
       where: { id: payment.subscriptionId },
     });
@@ -215,14 +229,11 @@ export class PaymentsService {
       throw new NotFoundException('Subscription not found');
     }
 
-    // Determine plan type from payment metadata or amount
     const meta = (payment.metadata as any) || {};
     const payAmount = Number(payment.amount);
 
-    // Check if it's an annual plan from metadata or price
     const isAnnual = meta.plan === 'annual' || payAmount >= 400;
 
-    // Use subscription duration if available, otherwise fallback
     let durationDays = subscription.duration || 30;
     if (isAnnual && subscription.priceYearly) {
       durationDays = 365;
@@ -230,66 +241,84 @@ export class PaymentsService {
 
     const tier = isAnnual ? 'PAID_ANNUAL' : 'PAID_MONTHLY';
 
-    // Calculate expiration date
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + durationDays);
 
-    // Update payment status
-    await this.prisma.payment.update({
-      where: { id: paymentId },
-      data: { status: 'completed' },
-    });
-
-    // Assign subscription + upgrade tier
-    await this.prisma.user.update({
-      where: { id: payment.userId },
-      data: {
-        subscriptionId: subscription.id,
-        subscriptionStatus: 'active',
-        subscriptionExpiresAt: expiresAt,
-        tier,
-      },
-    });
-
-    // Create UserSubscription record
-    await this.prisma.userSubscription.create({
-      data: {
-        userId: payment.userId,
-        subscriptionId: subscription.id,
-        startDate: new Date(),
-        endDate: expiresAt,
-        status: 'active',
-        paymentId: paymentId,
-      },
-    });
-
-    // Credit affiliate commission if user was referred
-    try {
-      const referral = await this.prisma.affiliateReferral.findUnique({
-        where: { referredUserId: payment.userId },
-        include: { affiliate: true },
-      });
-      if (referral && referral.affiliate) {
-        const RATES: Record<string, number> = { STANDARD: 0.30, ELITE: 0.40, AGENCY: 0.20 };
-        const rate = RATES[referral.affiliate.tier] || 0.30;
-        const commission = payAmount * rate;
-        await this.prisma.affiliateReferral.update({
-          where: { id: referral.id },
-          data: { paymentAmount: payAmount, commission, status: 'CONVERTED' },
+    // All payment-activation writes must commit atomically: partial state
+    // (paid user without subscription, affiliate credited without payment, etc.)
+    // is unacceptable. Prisma default timeout is 5s; raise to 15s for tron-scanner
+    // race + email latency headroom. ReadCommitted reduces P2034 risk on
+    // concurrent invocations for the same payment.
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.payment.update({
+          where: { id: paymentId },
+          data: { status: 'completed' },
         });
-        await this.prisma.affiliate.update({
-          where: { id: referral.affiliateId },
-          data: { totalSales: { increment: 1 }, totalEarned: { increment: commission } },
+
+        await tx.user.update({
+          where: { id: payment.userId },
+          data: {
+            subscriptionId: subscription.id,
+            subscriptionStatus: 'active',
+            subscriptionExpiresAt: expiresAt,
+            tier,
+          },
         });
-        this.logger.log(`Affiliate commission: $${commission.toFixed(2)} to ${referral.affiliate.code}`);
-      }
-    } catch (e) {
-      this.logger.error(`Affiliate commission error: ${e}`);
-    }
+
+        await tx.userSubscription.create({
+          data: {
+            userId: payment.userId,
+            subscriptionId: subscription.id,
+            startDate: new Date(),
+            endDate: expiresAt,
+            status: 'active',
+            paymentId: paymentId,
+          },
+        });
+
+        // Affiliate commission is best-effort: a failure here must NOT roll
+        // back the payment/tier commit. The tag [AFFILIATE_COMMISSION_FAILED]
+        // is used for log grep / alerting.
+        try {
+          const referral = await tx.affiliateReferral.findUnique({
+            where: { referredUserId: payment.userId },
+            include: { affiliate: true },
+          });
+          if (referral && referral.affiliate) {
+            const RATES: Record<string, number> = { STANDARD: 0.30, ELITE: 0.40, AGENCY: 0.20 };
+            const rate = RATES[referral.affiliate.tier] || 0.30;
+            const commission = payAmount * rate;
+            await tx.affiliateReferral.update({
+              where: { id: referral.id },
+              data: { paymentAmount: payAmount, commission, status: 'CONVERTED' },
+            });
+            await tx.affiliate.update({
+              where: { id: referral.affiliateId },
+              data: { totalSales: { increment: 1 }, totalEarned: { increment: commission } },
+            });
+            this.logger.log(`Affiliate commission: $${commission.toFixed(2)} to ${referral.affiliate.code}`);
+          }
+        } catch (affiliateError) {
+          const msg = affiliateError instanceof Error ? affiliateError.message : String(affiliateError);
+          this.logger.error(
+            `[AFFILIATE_COMMISSION_FAILED] paymentId=${paymentId} userId=${payment.userId}: ${msg}`,
+            affiliateError instanceof Error ? affiliateError.stack : undefined,
+          );
+          // TODO (Phase 3): retry via scheduled job
+        }
+      },
+      {
+        maxWait: 5000,
+        timeout: 15000,
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      },
+    );
 
     this.logger.log(`User ${payment.userId} upgraded to ${tier}, expires ${expiresAt.toISOString()}`);
 
-    // Notify user + admins about successful payment (best-effort, non-blocking for payment flow)
+    // Email notification runs AFTER the transaction has committed. A failed
+    // email must not revert the DB write (user already paid).
     await this.sendPaymentNotificationEmails({
       userEmail: payment.user?.email || null,
       amount: payAmount,
