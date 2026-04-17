@@ -724,4 +724,3 @@ export const userApi = new ApiClient(API_BASE_URL);
 // Export for backward compatibility
 export const adminApi = userApi;
 export const authApi = userApi;
-export const paymentsApi = userApi;

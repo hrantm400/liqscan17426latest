@@ -56,5 +56,3 @@ export function useVolumeData() {
 
     return { volumeMap, getVolume, isLowVolume, formatVolume, isLoading };
 }
-
-export { LOW_VOLUME_THRESHOLD };

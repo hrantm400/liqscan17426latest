@@ -472,16 +472,6 @@ export function getMaxCandlesForTimeframe(timeframe: string): number {
 }
 
 /**
- * Map legacy direction to v2 direction
- */
-export function mapDirectionToV2(direction: string): SeDirection {
-    if (direction === 'BULL' || direction === 'BUY' || direction === 'bullish') {
-        return 'bullish';
-    }
-    return 'bearish';
-}
-
-/**
  * Map v2 result to legacy SignalResult enum
  */
 export function mapResultToLegacy(result_v2: SeResult): 'WIN' | 'LOSS' | null {

@@ -54,7 +54,7 @@ export type WebhookSignalInput = {
   suppressTelegramAlert?: boolean;
 };
 
-export class StoredSignal {
+class StoredSignal {
   id: string;
   strategyType: string;
   symbol: string;

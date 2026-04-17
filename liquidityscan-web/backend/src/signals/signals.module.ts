@@ -9,7 +9,6 @@ import { IctBiasScanner } from './scanners/ict-bias.scanner';
 import { RsiDivergenceScanner } from './scanners/rsi-divergence.scanner';
 import { SuperEngulfingScanner } from './scanners/super-engulfing.scanner';
 import { LifecycleService } from './lifecycle.service';
-import { PositionTrackerService } from './position-tracker.service';
 import { SignalStateService } from './signal-state.service';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CandlesModule } from '../candles/candles.module';
@@ -30,7 +29,6 @@ import { AppConfigModule } from '../app-config/app-config.module';
     CisdScanner,
     ScannerService,
     LifecycleService,
-    PositionTrackerService,
     SignalStateService,
   ],
   exports: [SignalsService],

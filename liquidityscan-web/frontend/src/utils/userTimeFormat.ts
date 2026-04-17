@@ -4,7 +4,7 @@ import type { Time } from 'lightweight-charts';
  * Maps fixed-offset strings from the user profile (e.g. "+04:00") to IANA Etc/GMT* zones.
  * POSIX "Etc/GMT" signs are inverted: UTC+4 → Etc/GMT-4
  */
-export function offsetToEtcGmt(timezoneOffset: string | undefined | null): string | undefined {
+function offsetToEtcGmt(timezoneOffset: string | undefined | null): string | undefined {
   if (!timezoneOffset || timezoneOffset.length !== 6) return undefined;
   if (timezoneOffset[0] !== '+' && timezoneOffset[0] !== '-') return undefined;
   const h = parseInt(timezoneOffset.slice(1, 3), 10);

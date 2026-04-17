@@ -1,5 +1,5 @@
 /** GA4 measurement ID (Admin → Data streams). Init is in index.html; SPA sends page_view via GaTrackingBridge. */
-export const GA_MEASUREMENT_ID = 'G-YDLXBB7M7D';
+const GA_MEASUREMENT_ID = 'G-YDLXBB7M7D';
 
 /** SPA route change — send page_view manually */
 export function trackPageview(path: string, title?: string): void {

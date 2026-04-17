@@ -19,7 +19,7 @@ export function getMonitorLocationForStrategy(strategyType: string): { pathname:
 }
 
 /** Base symbol for search filter (monitors match symbol.includes) */
-export function symbolSearchToken(symbol: string): string {
+function symbolSearchToken(symbol: string): string {
   const s = symbol.trim().toUpperCase();
   if (s.endsWith('USDT')) return s.slice(0, -4);
   return s;

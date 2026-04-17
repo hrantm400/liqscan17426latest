@@ -28,7 +28,7 @@ export function closestIdx(chartData: GeometryCandleBar[], unixSec: number): num
   return best;
 }
 
-export function closestIdxBeforeBreakout(
+function closestIdxBeforeBreakout(
   chartData: GeometryCandleBar[],
   breakoutIdx: number,
   unixSec: number,

@@ -59,25 +59,6 @@ export async function fetchSignalById(id: string): Promise<Signal | null> {
 }
 
 /**
- * Trigger a manual scan for all strategies.
- */
-export async function scanAll(): Promise<{ status: string }> {
-  try {
-    const baseUrl = getApiBaseUrl();
-    console.log('[signalsApi] Triggering manual scan at', `${baseUrl}/signals/scan`);
-    const res = await fetch(`${baseUrl}/signals/scan`, {
-      method: 'POST',
-      headers: authHeaders(true),
-    });
-    if (!res.ok) throw new Error('Scan failed');
-    return await res.json();
-  } catch (err) {
-    console.error('Manual scan error:', err);
-    throw err;
-  }
-}
-
-/**
  * Fetch live ICT bias for all symbols in the given timeframe.
  * Returns { [symbol]: { bias, prevHigh, prevLow, direction } }
  */
@@ -88,7 +69,7 @@ export type LiveBiasEntry = {
   direction: string;
 };
 
-export async function fetchLiveBias(
+async function fetchLiveBias(
   timeframe: string,
 ): Promise<Record<string, LiveBiasEntry>> {
   try {
@@ -151,24 +132,6 @@ export async function fetchSignalStats(strategyType?: string): Promise<SignalSta
 }
 
 /**
- * Trigger manual scan for signals
- */
-export async function scanSuperEngulfing(_timeframe?: string): Promise<{ totalSignals: number; symbolsScanned: number; timeframesScanned: number }> {
-  try {
-    const baseUrl = getApiBaseUrl();
-    const url = `${baseUrl}/signals/scan`;
-    const res = await fetch(url, { method: 'POST', headers: authHeaders(true) });
-    if (!res.ok) throw new Error('Scan failed');
-    // The backend currently returns { status: 'Scan completed' }. We mock the rest for the UI.
-    return { totalSignals: 0, symbolsScanned: 0, timeframesScanned: 0 };
-  } catch (error) {
-    throw error;
-  }
-}
-
-
-
-/**
  * Fetch ICT bias for specific recent candles.
  */
 export async function detectICTBias(candles: any[]): Promise<{ bias: string; message: string } | null> {
@@ -213,44 +176,3 @@ export interface MarketOverviewData {
   volatility: { symbol: string; volatility: number; priceChange: number }[];
   notableMovements: { symbol: string; priceChange: number; volume: number }[];
 }
-
-export async function fetchDailyRecap(date?: string): Promise<DailyRecapData> {
-  try {
-    const baseUrl = getApiBaseUrl();
-    const params = new URLSearchParams();
-    if (date) params.set('date', date);
-    const url = `${baseUrl}/signals/daily-recap${params.toString() ? `?${params.toString()}` : ''}`;
-    const res = await fetch(url, { headers: authHeaders() });
-    if (!res.ok) throw new Error('Failed');
-    return await res.json();
-  } catch {
-    return {
-      date: date || new Date().toISOString().split('T')[0],
-      totalSignals: 0,
-      signalsByStrategy: {},
-      winLossStats: { wins: 0, losses: 0, winRate: 0 },
-      topSignals: [],
-      targetAchievements: { tp1: { count: 0, percentage: 0 }, tp2: { count: 0, percentage: 0 }, tp3: { count: 0, percentage: 0 } },
-    };
-  }
-}
-
-export async function fetchMarketOverview(date?: string): Promise<MarketOverviewData> {
-  try {
-    const baseUrl = getApiBaseUrl();
-    const params = new URLSearchParams();
-    if (date) params.set('date', date);
-    const url = `${baseUrl}/signals/market-overview${params.toString() ? `?${params.toString()}` : ''}`;
-    const res = await fetch(url, { headers: authHeaders() });
-    if (!res.ok) throw new Error('Failed');
-    return await res.json();
-  } catch {
-    return {
-      topSymbols: [],
-      marketTrends: { bullish: 0, bearish: 0, ranging: 0 },
-      volatility: [],
-      notableMovements: [],
-    };
-  }
-}
-
