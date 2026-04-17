@@ -1,8 +1,7 @@
-import { Controller, Get, Post, Put, Param, Body, Req, Headers, BadRequestException, ForbiddenException, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, Req, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { PaymentsService } from './payments.service';
 import { Network } from '../lib/payments/types';
 import { PrismaService } from '../prisma/prisma.service';
-import { Public } from '../auth/decorators/public.decorator';
 
 @Controller('payments')
 export class PaymentsController {
@@ -10,24 +9,6 @@ export class PaymentsController {
     private paymentsService: PaymentsService,
     private prisma: PrismaService
   ) { }
-
-  @Post('nowpayments-webhook')
-  @Public()
-  @HttpCode(HttpStatus.OK)
-  async nowPaymentsWebhook(
-    @Body() body: Record<string, unknown>,
-    @Headers('x-nowpayments-sig') signature: string,
-  ) {
-    if (!signature) {
-      throw new BadRequestException('Missing x-nowpayments-sig');
-    }
-    try {
-      await this.paymentsService.handleNowPaymentsWebhook(body, signature);
-    } catch (e) {
-      if (e instanceof BadRequestException) throw e;
-      throw new BadRequestException('Webhook processing failed');
-    }
-  }
 
   @Post('create')
   async createPayment(

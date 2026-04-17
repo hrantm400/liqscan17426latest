@@ -1,9 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import * as crypto from 'crypto';
 import { MailService } from '../mail/mail.service';
-
-const NOWPAYMENTS_API_BASE = 'https://api.nowpayments.io/v1';
 
 @Injectable()
 export class PaymentsService {
@@ -339,50 +336,6 @@ export class PaymentsService {
       data,
     });
     return payment;
-  }
-
-  /** Verify NOWPayments IPN signature (HMAC-SHA512 of sorted JSON body). */
-  verifyNowPaymentsIpnSignature(body: Record<string, unknown>, signature: string): boolean {
-    const secret = process.env.NOWPAYMENTS_IPN_SECRET;
-    if (!secret || !signature) return false;
-    try {
-      const keys = Object.keys(body).sort();
-      const sorted: Record<string, unknown> = {};
-      for (const k of keys) sorted[k] = body[k];
-      const payload = JSON.stringify(sorted);
-      const expected = crypto.createHmac('sha512', secret).update(payload).digest('hex');
-      const sigBuf = Buffer.from(signature, 'hex');
-      const expBuf = Buffer.from(expected, 'hex');
-      return sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf);
-    } catch {
-      return false;
-    }
-  }
-
-  /** Handle IPN webhook from NOWPayments: verify signature, update payment, process subscription if paid. */
-  async handleNowPaymentsWebhook(body: Record<string, unknown>, signature: string): Promise<void> {
-    if (!this.verifyNowPaymentsIpnSignature(body, signature)) {
-      throw new BadRequestException('Invalid IPN signature');
-    }
-    const orderId = body.order_id as string | undefined;
-    const status = String(body.payment_status ?? body.status ?? '').toLowerCase();
-    if (!orderId) return;
-
-    if (status === 'finished' || status === 'paid' || status === 'confirmed') {
-      try {
-        await this.processSubscriptionPayment(orderId);
-      } catch (e) {
-        if (e instanceof BadRequestException && e.getResponse()?.toString().includes('already')) {
-          return;
-        }
-        throw e;
-      }
-    } else if (status === 'failed' || status === 'expired' || status === 'refunded') {
-      await this.prisma.payment.updateMany({
-        where: { id: orderId, status: 'pending' },
-        data: { status: 'failed' },
-      });
-    }
   }
 
   async getUserPayments(userId: string) {
