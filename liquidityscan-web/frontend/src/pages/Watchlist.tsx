@@ -65,7 +65,7 @@ export const Watchlist: React.FC = () => {
     });
 
     const { data: rsiData, isLoading: rsiLoading } = useQuery({
-        queryKey: ['signals', 'RSI_DIVERGENCE_UNION', 1000, 0],
+        queryKey: ['signals', 'RSIDIVERGENCE', 1000, 0],
         queryFn: () => fetchRsiDivergenceSignalsUnion(1000, 0),
         refetchInterval: 5 * 60 * 1000,
     });

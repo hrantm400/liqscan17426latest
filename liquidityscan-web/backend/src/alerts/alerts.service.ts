@@ -5,7 +5,6 @@ import { PricingService } from '../pricing/pricing.service';
 import {
     getStrategyAlertOptionsForApi,
     getStrategyDefinition,
-    normalizeStrategyTypeForAlerts,
     normalizeSubscriptionTimeframes,
 } from './strategy-alert-config';
 
@@ -41,7 +40,7 @@ export class AlertsService {
         }
 
         const normalizedSymbol = symbol.trim().toUpperCase();
-        const canonStrategy = normalizeStrategyTypeForAlerts(strategyType);
+        const canonStrategy = String(strategyType ?? '').trim().toUpperCase();
         if (!getStrategyDefinition(canonStrategy)) {
             throw new BadRequestException(
                 `Unknown strategy "${strategyType}". Open strategy-options or pick a listed scanner.`,
@@ -100,7 +99,7 @@ export class AlertsService {
             throw new BadRequestException('You do not own this alert subscription');
         }
 
-        const canonStrategy = normalizeStrategyTypeForAlerts(alert.strategyType);
+        const canonStrategy = String(alert.strategyType ?? '').trim().toUpperCase();
         const tfJson =
             data.timeframes !== undefined
                 ? normalizeSubscriptionTimeframes(canonStrategy, data.timeframes)

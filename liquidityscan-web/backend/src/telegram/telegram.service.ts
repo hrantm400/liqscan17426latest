@@ -9,10 +9,7 @@ import * as path from 'path';
 import { CandlesService, CandleDto } from '../candles/candles.service';
 import { PricingService } from '../pricing/pricing.service';
 import { AlertsService } from '../alerts/alerts.service';
-import {
-    expandStrategyKeysForSubscriptionQuery,
-    normalizeTimeframeForAlerts,
-} from '../alerts/strategy-alert-config';
+import { normalizeTimeframeForAlerts } from '../alerts/strategy-alert-config';
 import { TelegramChartPlaywrightService } from './telegram-chart-playwright.service';
 
 @Injectable()
@@ -353,9 +350,8 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         if (!this.bot) return;
 
         try {
-            const keys = expandStrategyKeysForSubscriptionQuery(strategyType);
             const subs = await this.prisma.alertSubscription.findMany({
-                where: { symbol, strategyType: { in: keys }, isActive: true },
+                where: { symbol, strategyType, isActive: true },
                 include: { user: true },
             });
 

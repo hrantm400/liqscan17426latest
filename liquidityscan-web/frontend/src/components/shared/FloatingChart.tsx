@@ -45,7 +45,6 @@ const formatStrategySource = (s: string) => {
     const map: Record<string, string> = {
         SUPER_ENGULFING: 'SuperEngulfing',
         ICT_BIAS: 'ICT Bias',
-        RSI_DIVERGENCE: 'RSI Div',
         RSIDIVERGENCE: 'RSI Div',
         CRT: 'CRT',
         '3OB': '3-OB',

@@ -253,7 +253,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
 
     /**
      * CRT: classify next 1–2 candle body closes vs entry / prev range (STRONG | WEAK | FAILED).
-     * RSIDIVERGENCE (and legacy RSI_DIVERGENCE) stale rows are closed by scanner-driven closeStaleRsiSignals (SignalsService).
+     * RSIDIVERGENCE stale rows are closed by scanner-driven closeStaleRsiSignals (SignalsService).
      */
     private async checkCrtLifecycle(): Promise<void> {
         const signals = await (this.prisma as any).superEngulfingSignal.findMany({
@@ -643,14 +643,14 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
             });
             const delRsi = await this.prisma.superEngulfingSignal.deleteMany({
                 where: {
-                    strategyType: { in: ['RSI_DIVERGENCE', 'RSIDIVERGENCE'] },
+                    strategyType: 'RSIDIVERGENCE',
                     lifecycleStatus: 'COMPLETED',
                     closedAt: { lt: cutoff24 },
                 },
             });
             if (delIct.count + delRsi.count > 0) {
                 this.logger.log(
-                    `Global stale cleanup: deleted ${delIct.count} ICT_BIAS and ${delRsi.count} RSI (RSI_DIVERGENCE/RSIDIVERGENCE) COMPLETED rows older than 24h.`,
+                    `Global stale cleanup: deleted ${delIct.count} ICT_BIAS and ${delRsi.count} RSIDIVERGENCE COMPLETED rows older than 24h.`,
                 );
             }
 

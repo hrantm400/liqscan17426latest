@@ -20,22 +20,6 @@ export const SIGNAL_TIMEFRAME_MS: Record<string, number> = {
     '1w': 604_800_000,
 };
 
-const RSI_DIVERGENCE_STRATEGY_TYPES = ['RSIDIVERGENCE', 'RSI_DIVERGENCE'] as const;
-
-/** Scanner emits RSIDIVERGENCE-*; legacy rows may use RSI_DIVERGENCE-* with the same suffix. */
-export function expandConfirmedRsiDivergenceIds(currentActiveIds: string[]): string[] {
-    const expanded = new Set<string>();
-    const prefixNew = 'RSIDIVERGENCE-';
-    const prefixLegacy = 'RSI_DIVERGENCE-';
-    for (const id of currentActiveIds) {
-        expanded.add(id);
-        if (id.startsWith(prefixNew)) {
-            expanded.add(prefixLegacy + id.slice(prefixNew.length));
-        }
-    }
-    return Array.from(expanded);
-}
-
 export type WebhookSignalInput = {
   id?: string;
   strategyType: string;
@@ -190,7 +174,7 @@ export class SignalsService {
   }
 
   /**
-   * Add signals. Accepted strategyTypes: SUPER_ENGULFING, RSIDIVERGENCE, RSI_DIVERGENCE, ICT_BIAS, CRT, 3OB, CISD.
+   * Add signals. Accepted strategyTypes: SUPER_ENGULFING, RSIDIVERGENCE, ICT_BIAS, CRT, 3OB, CISD.
    * If an item has signals_by_timeframe but no timeframe (raw Grno single-coin), expand it first.
    */
   async addSignals(items: Array<{ id?: string; strategyType?: string; symbol: string; timeframe?: string; signalType?: string; price: number; detectedAt?: string; closedAt?: string; lifecycleStatus?: string; result?: string; status?: string; metadata?: Record<string, unknown>; suppressTelegramAlert?: boolean; signals_by_timeframe?: Record<string, unknown> }>): Promise<number> {
@@ -418,7 +402,7 @@ export class SignalsService {
       return 0;
     }
     // RSI uses closeStaleRsiSignals per scan — multiple concurrent rows per symbol+TF are allowed.
-    if (strategyType === 'RSI_DIVERGENCE' || strategyType === 'RSIDIVERGENCE') {
+    if (strategyType === 'RSIDIVERGENCE') {
       return 0;
     }
     // ICT_BIAS: lifecycle validates next candle and closes; deleteStaleCompletedGlobal deletes old COMPLETED. No archive/restore.
@@ -527,11 +511,10 @@ export class SignalsService {
       const now = new Date();
       const candleMs = SignalsService.TIMEFRAME_MS[timeframe] ?? 3600000;
       const expiryThreshold = new Date(now.getTime() - candleMs * RSI_STALE_MAX_CANDLES);
-      const strategyIn = [...RSI_DIVERGENCE_STRATEGY_TYPES];
 
       await (this.prisma as any).superEngulfingSignal.updateMany({
         where: {
-          strategyType: { in: strategyIn },
+          strategyType: 'RSIDIVERGENCE',
           symbol,
           timeframe,
           lifecycleStatus: { in: ['PENDING', 'ACTIVE'] },
@@ -540,15 +523,14 @@ export class SignalsService {
         data: { lifecycleStatus: 'COMPLETED', status: 'CLOSED', closedAt: now },
       });
 
-      const expandedConfirmed = expandConfirmedRsiDivergenceIds(currentActiveIds);
-      if (expandedConfirmed.length > 0) {
+      if (currentActiveIds.length > 0) {
         await (this.prisma as any).superEngulfingSignal.updateMany({
           where: {
-            strategyType: { in: strategyIn },
+            strategyType: 'RSIDIVERGENCE',
             symbol,
             timeframe,
             lifecycleStatus: { in: ['PENDING', 'ACTIVE'] },
-            id: { notIn: expandedConfirmed },
+            id: { notIn: currentActiveIds },
           },
           data: { lifecycleStatus: 'COMPLETED', status: 'CLOSED', closedAt: now },
         });
@@ -556,7 +538,7 @@ export class SignalsService {
 
       await (this.prisma as any).superEngulfingSignal.deleteMany({
         where: {
-          strategyType: { in: strategyIn },
+          strategyType: 'RSIDIVERGENCE',
           symbol,
           timeframe,
           lifecycleStatus: 'COMPLETED',
@@ -899,7 +881,6 @@ export class SignalsService {
       const signalsByStrategy: Record<string, number> = {
         SUPER_ENGULFING: 0,
         ICT_BIAS: 0,
-        RSI_DIVERGENCE: 0,
         RSIDIVERGENCE: 0,
       };
       
@@ -955,7 +936,7 @@ export class SignalsService {
       return {
         date,
         totalSignals: 0,
-        signalsByStrategy: { SUPER_ENGULFING: 0, ICT_BIAS: 0, RSI_DIVERGENCE: 0, RSIDIVERGENCE: 0 },
+        signalsByStrategy: { SUPER_ENGULFING: 0, ICT_BIAS: 0, RSIDIVERGENCE: 0 },
         winLossStats: { wins: 0, losses: 0, winRate: 0 },
         topSignals: [],
         targetAchievements: { tp1: { count: 0, percentage: 0 }, tp2: { count: 0, percentage: 0 }, tp3: { count: 0, percentage: 0 } },

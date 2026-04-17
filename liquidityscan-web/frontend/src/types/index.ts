@@ -17,7 +17,6 @@ export interface User {
 
 // Signal types
 export type StrategyType =
-  | 'RSI_DIVERGENCE'
   | 'RSIDIVERGENCE'
   | 'SUPER_ENGULFING'
   | 'ICT_BIAS'

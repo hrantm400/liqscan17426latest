@@ -40,13 +40,6 @@ export function normalizeTimeframeForAlerts(tf: string): string {
     return lower;
 }
 
-/** Map legacy DB values to the canonical scanner strategyType. */
-export function normalizeStrategyTypeForAlerts(st: string): string {
-    const u = String(st ?? '').trim().toUpperCase();
-    if (u === 'RSI_DIVERGENCE') return 'RSIDIVERGENCE';
-    return u;
-}
-
 export const STRATEGY_ALERT_DEFINITIONS: StrategyAlertDef[] = [
     {
         value: 'SUPER_ENGULFING',
@@ -99,7 +92,8 @@ export const STRATEGY_ALERT_DEFINITIONS: StrategyAlertDef[] = [
 ];
 
 export function getStrategyDefinition(value: string): StrategyAlertDef | undefined {
-    return STRATEGY_ALERT_DEFINITIONS.find((d) => d.value === normalizeStrategyTypeForAlerts(value));
+    const key = String(value ?? '').trim().toUpperCase();
+    return STRATEGY_ALERT_DEFINITIONS.find((d) => d.value === key);
 }
 
 /** Intersect user-selected TFs with strategy allow-list; null/empty input => all TFs allowed (no JSON filter). */
@@ -116,13 +110,6 @@ export function normalizeSubscriptionTimeframes(
     if (!timeframes?.length) return null;
     const out = timeframes.map(normalizeTimeframeForAlerts).filter((tf) => allowed.has(tf));
     return out.length ? out : null;
-}
-
-/** DB may still have RSI_DIVERGENCE rows — match both when dispatching RSIDIVERGENCE signals. */
-export function expandStrategyKeysForSubscriptionQuery(strategyType: string): string[] {
-    const canon = normalizeStrategyTypeForAlerts(strategyType);
-    if (canon === 'RSIDIVERGENCE') return ['RSIDIVERGENCE', 'RSI_DIVERGENCE'];
-    return [canon];
 }
 
 export function getStrategyAlertOptionsForApi() {

@@ -118,7 +118,7 @@ export function MonitorRSI() {
   }, [searchParams]);
 
   const { data: rsiSignalsData, isLoading: isSignalsLoading, refetch } = useQuery({
-    queryKey: ['signals', 'RSI_DIVERGENCE_UNION', 5000],
+    queryKey: ['signals', 'RSIDIVERGENCE', 5000],
     queryFn: () => fetchRsiDivergenceSignalsUnion(5000),
     refetchInterval: 60000,
     placeholderData: (prev) => prev,
@@ -156,7 +156,7 @@ export function MonitorRSI() {
     volumeSort,
     rankingFilter,
     showClosedSignals: true,
-    strategyType: 'RSI_DIVERGENCE',
+    strategyType: 'RSIDIVERGENCE',
 
     volumeMap,
     marketCapMap,
@@ -498,7 +498,7 @@ export function MonitorRSI() {
 
         {/* Status Tabs */}
         <StatusTabs
-          strategyType="RSI_DIVERGENCE"
+          strategyType="RSIDIVERGENCE"
           activeStatus={statusFilter}
           onStatusChange={setStatusFilter}
           hideArchive={true}

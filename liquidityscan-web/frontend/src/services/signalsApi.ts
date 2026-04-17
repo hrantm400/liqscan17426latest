@@ -30,18 +30,9 @@ export async function fetchSignals(strategyType?: StrategyType, limit = 1000, mi
   }
 }
 
-/** Merges scanner RSIDIVERGENCE rows with legacy RSI_DIVERGENCE (dedupe by id). */
+/** Fetches RSI divergence signals (scanner canonical key). */
 export async function fetchRsiDivergenceSignalsUnion(limit = 1000, minVolume?: number): Promise<Signal[]> {
-  const [modern, legacy] = await Promise.all([
-    fetchSignals('RSIDIVERGENCE', limit, minVolume),
-    fetchSignals('RSI_DIVERGENCE', limit, minVolume),
-  ]);
-  const byId = new Map<string, Signal>();
-  for (const s of modern) byId.set(s.id, s);
-  for (const s of legacy) {
-    if (!byId.has(s.id)) byId.set(s.id, s);
-  }
-  return Array.from(byId.values());
+  return fetchSignals('RSIDIVERGENCE', limit, minVolume);
 }
 
 /**

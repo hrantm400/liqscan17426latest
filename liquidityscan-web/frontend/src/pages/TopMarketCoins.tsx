@@ -11,7 +11,7 @@ import { staggerContainer, listItemVariants } from '../utils/animations';
 const STRATEGY_ORDER: StrategyType[] = [
     'SUPER_ENGULFING',
     'ICT_BIAS',
-    'RSI_DIVERGENCE',
+    'RSIDIVERGENCE',
     'CRT',
     '3OB',
 ];
@@ -19,7 +19,6 @@ const STRATEGY_ORDER: StrategyType[] = [
 const STRATEGY_LABEL: Record<StrategyType, string> = {
     SUPER_ENGULFING: 'Super Engulfing',
     ICT_BIAS: 'ICT Bias',
-    RSI_DIVERGENCE: 'RSI Divergence',
     RSIDIVERGENCE: 'RSI Divergence',
     CRT: 'CRT',
     '3OB': '3-OB',
@@ -29,7 +28,6 @@ const STRATEGY_LABEL: Record<StrategyType, string> = {
 const FEATURE_KEY: Record<StrategyType, string> = {
     SUPER_ENGULFING: 'super_engulfing',
     ICT_BIAS: 'ict_bias',
-    RSI_DIVERGENCE: 'rsi_divergence',
     RSIDIVERGENCE: 'rsi_divergence',
     CRT: 'crt',
     '3OB': '3_ob',
@@ -56,7 +54,7 @@ export function TopMarketCoins() {
             return (
                 isSymbolAllowed(binanceSymbol, FEATURE_KEY.SUPER_ENGULFING) ||
                 isSymbolAllowed(binanceSymbol, FEATURE_KEY.ICT_BIAS) ||
-                isSymbolAllowed(binanceSymbol, FEATURE_KEY.RSI_DIVERGENCE) ||
+                isSymbolAllowed(binanceSymbol, FEATURE_KEY.RSIDIVERGENCE) ||
                 isSymbolAllowed(binanceSymbol, FEATURE_KEY.CRT) ||
                 isSymbolAllowed(binanceSymbol, FEATURE_KEY['3OB'])
             );
@@ -77,7 +75,7 @@ export function TopMarketCoins() {
         refetchInterval: 60 * 1000,
     });
     const { data: rsi = [], isLoading: l2 } = useQuery({
-        queryKey: ['signals', 'RSI_DIVERGENCE_UNION', 1000, 0],
+        queryKey: ['signals', 'RSIDIVERGENCE', 1000, 0],
         queryFn: () => fetchRsiDivergenceSignalsUnion(1000, 0),
         staleTime: 60 * 1000,
         refetchInterval: 60 * 1000,
@@ -110,7 +108,7 @@ export function TopMarketCoins() {
         };
         ingest(se as Signal[], 'SUPER_ENGULFING');
         ingest(bias as Signal[], 'ICT_BIAS');
-        ingest(rsi as Signal[], 'RSI_DIVERGENCE');
+        ingest(rsi as Signal[], 'RSIDIVERGENCE');
         ingest(crt as Signal[], 'CRT');
         ingest(ob3 as Signal[], '3OB');
         return map;

@@ -25,12 +25,8 @@ type StrategyOption = {
 
 const COMMON_COINS = ['BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT', 'XRPUSDT', 'ADAUSDT', 'DOGEUSDT', 'AVAXUSDT'];
 
-function canonicalStrategyType(st: string): string {
-    return st === 'RSI_DIVERGENCE' ? 'RSIDIVERGENCE' : st;
-}
-
 function timeframesForEdit(alert: AlertSubscription, options: StrategyOption[]): string[] {
-    const key = canonicalStrategyType(alert.strategyType);
+    const key = alert.strategyType;
     return options.find((o) => o.value === key)?.allowedTimeframes ?? ['4h', '1h', '1d', '1w'];
 }
 
@@ -212,11 +208,7 @@ export function TelegramAlertsConfig() {
     };
 
     const alertsFor = (strategyValue: string) =>
-        alerts.filter((a) => {
-            if (a.strategyType === strategyValue) return true;
-            if (strategyValue === 'RSIDIVERGENCE' && a.strategyType === 'RSI_DIVERGENCE') return true;
-            return false;
-        });
+        alerts.filter((a) => a.strategyType === strategyValue);
 
     if (isLoading) {
         return (

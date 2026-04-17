@@ -440,7 +440,7 @@ export function InteractiveLiveChart({
         chartRef.current = chart;
         candlestickSeriesRef.current = candlestickSeries;
 
-        // === RSI SUB-CHART (only for RSI_DIVERGENCE signals) ===
+        // === RSI SUB-CHART (only for RSIDIVERGENCE signals) ===
         const isRsiSignal = isRsiDivergenceSignalId(signal?.id);
         if (isRsiSignal && rsiContainerRef.current) {
           const rsiHeight = isFullscreen ? 200 : 180;

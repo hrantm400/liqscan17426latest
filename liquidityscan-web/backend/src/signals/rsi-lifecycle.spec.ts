@@ -9,7 +9,6 @@ import {
     SignalsService,
     RSI_STALE_MAX_CANDLES,
     SIGNAL_TIMEFRAME_MS,
-    expandConfirmedRsiDivergenceIds,
 } from './signals.service';
 import * as indicators from './indicators';
 import * as candleHelper from './scanner-candles.helper';
@@ -32,23 +31,6 @@ function makeCandles(count: number): CandleData[] {
 describe('RSI Divergence lifecycle', () => {
     beforeEach(() => {
         jest.clearAllMocks();
-    });
-
-    describe('expandConfirmedRsiDivergenceIds', () => {
-        it('adds RSI_DIVERGENCE- variant for each RSIDIVERGENCE- id', () => {
-            const out = expandConfirmedRsiDivergenceIds(['RSIDIVERGENCE-BTCUSDT-1h-1700000000000']);
-            expect(out).toEqual(
-                expect.arrayContaining([
-                    'RSIDIVERGENCE-BTCUSDT-1h-1700000000000',
-                    'RSI_DIVERGENCE-BTCUSDT-1h-1700000000000',
-                ]),
-            );
-            expect(out).toHaveLength(2);
-        });
-
-        it('returns empty array for empty input', () => {
-            expect(expandConfirmedRsiDivergenceIds([])).toEqual([]);
-        });
     });
 
     describe('RsiDivergenceScanner', () => {
@@ -203,7 +185,7 @@ describe('RSI Divergence lifecycle', () => {
     });
 
     describe('SignalsService.closeStaleRsiSignals', () => {
-        it('first updateMany closes rows older than 15 candles for both RSI strategy types', async () => {
+        it('first updateMany closes rows older than 15 candles for RSIDIVERGENCE', async () => {
             const updateMany = jest.fn().mockResolvedValue({ count: 1 });
             const deleteMany = jest.fn().mockResolvedValue({ count: 0 });
 
@@ -218,7 +200,7 @@ describe('RSI Divergence lifecycle', () => {
             expect(updateMany.mock.calls[0][0]).toEqual(
                 expect.objectContaining({
                     where: {
-                        strategyType: { in: ['RSIDIVERGENCE', 'RSI_DIVERGENCE'] },
+                        strategyType: 'RSIDIVERGENCE',
                         symbol: 'BTCUSDT',
                         timeframe: '1h',
                         lifecycleStatus: { in: ['PENDING', 'ACTIVE'] },
@@ -233,7 +215,7 @@ describe('RSI Divergence lifecycle', () => {
             expect(deleteMany).toHaveBeenCalled();
         });
 
-        it('second updateMany uses id notIn expanded confirmed set', async () => {
+        it('second updateMany uses id notIn confirmed set', async () => {
             const updateMany = jest.fn().mockResolvedValue({ count: 0 });
             const deleteMany = jest.fn().mockResolvedValue({ count: 0 });
             const prisma = {
@@ -243,14 +225,13 @@ describe('RSI Divergence lifecycle', () => {
             await service.closeStaleRsiSignals('ETHUSDT', '4h', ['RSIDIVERGENCE-ETHUSDT-4h-999']);
 
             const patternWhere = updateMany.mock.calls[1][0].where;
-            expect(patternWhere.strategyType).toEqual({ in: ['RSIDIVERGENCE', 'RSI_DIVERGENCE'] });
+            expect(patternWhere.strategyType).toEqual('RSIDIVERGENCE');
             expect(patternWhere.id).toEqual({
                 notIn: expect.arrayContaining([
                     'RSIDIVERGENCE-ETHUSDT-4h-999',
-                    'RSI_DIVERGENCE-ETHUSDT-4h-999',
                 ]),
             });
-            expect((patternWhere.id as { notIn: string[] }).notIn).toHaveLength(2);
+            expect((patternWhere.id as { notIn: string[] }).notIn).toHaveLength(1);
         });
 
         it('does not run pattern close when scan returns no ids (only age + delete)', async () => {
@@ -266,7 +247,7 @@ describe('RSI Divergence lifecycle', () => {
             expect(updateMany.mock.calls[0][0].where.detectedAt).toEqual({ lt: expect.any(Date) });
         });
 
-        it('deleteMany removes COMPLETED for both RSI strategy types older than 24h', async () => {
+        it('deleteMany removes COMPLETED RSIDIVERGENCE older than 24h', async () => {
             const updateMany = jest.fn().mockResolvedValue({ count: 0 });
             const deleteMany = jest.fn().mockResolvedValue({ count: 1 });
             const prisma = {
@@ -277,7 +258,7 @@ describe('RSI Divergence lifecycle', () => {
 
             expect(deleteMany).toHaveBeenCalledWith({
                 where: expect.objectContaining({
-                    strategyType: { in: ['RSIDIVERGENCE', 'RSI_DIVERGENCE'] },
+                    strategyType: 'RSIDIVERGENCE',
                     symbol: 'Z',
                     timeframe: '1d',
                     lifecycleStatus: 'COMPLETED',

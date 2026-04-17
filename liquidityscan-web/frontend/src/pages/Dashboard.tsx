@@ -17,7 +17,7 @@ interface StrategySummary {
 // Strategy-specific timeframes (as per Java bot and PineScript indicators)
 const STRATEGY_TIMEFRAMES = {
   SUPER_ENGULFING: ['4h', '1d', '1w'] as Timeframe[],
-  RSI_DIVERGENCE: ['1h', '4h', '1d'] as Timeframe[],
+  RSIDIVERGENCE: ['1h', '4h', '1d'] as Timeframe[],
   ICT_BIAS: ['4h', '1d', '1w'] as Timeframe[],
   CRT: ['1h', '4h', '1d', '1w'] as Timeframe[],
   '3OB': ['4h', '1d', '1w'] as Timeframe[],
@@ -46,7 +46,7 @@ export const Dashboard: React.FC = () => {
   });
 
   const { data: rsiData } = useQuery({
-    queryKey: ['signals', 'RSI_DIVERGENCE_UNION', 500, 20000000],
+    queryKey: ['signals', 'RSIDIVERGENCE', 500, 20000000],
     queryFn: () => fetchRsiDivergenceSignalsUnion(500, 20_000_000),
     refetchInterval: 5 * 60 * 1000,
     placeholderData: (prev) => prev,
@@ -127,7 +127,7 @@ export const Dashboard: React.FC = () => {
     summary.total = signals.length;
     signals.forEach((signal) => {
       const tf = signal.timeframe as Timeframe;
-      if (STRATEGY_TIMEFRAMES.RSI_DIVERGENCE.includes(tf) && summary.timeframes[tf] !== undefined) summary.timeframes[tf]++;
+      if (STRATEGY_TIMEFRAMES.RSIDIVERGENCE.includes(tf) && summary.timeframes[tf] !== undefined) summary.timeframes[tf]++;
     });
     return summary;
   }, [rsiData, volumeMap]);

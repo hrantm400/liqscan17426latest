@@ -313,18 +313,16 @@ export function SignalDetails() {
   // Derive strategy type from signal ID
   const getStrategyType = ():
     | 'SUPER_ENGULFING'
-    | 'RSI_DIVERGENCE'
+    | 'RSIDIVERGENCE'
     | 'ICT_BIAS'
     | 'CRT'
     | '3OB'
     | 'CISD' => {
     if (
-      signalData.strategyType === 'RSI_DIVERGENCE' ||
       signalData.strategyType === 'RSIDIVERGENCE' ||
-      signalData.id?.startsWith('RSI_DIVERGENCE') ||
-      signalData.id?.startsWith('RSIDIVERGENCE')
+      signalData.id?.startsWith('RSIDIVERGENCE-')
     )
-      return 'RSI_DIVERGENCE';
+      return 'RSIDIVERGENCE';
     if (signalData.strategyType === 'ICT_BIAS' || signalData.id?.startsWith('ICT_BIAS')) return 'ICT_BIAS';
     const st = signalData.strategyType as string;
     if (st === 'CISD' || st === 'CISD_RETEST' || signalData.id?.startsWith('CISD-') || signalData.id?.startsWith('CISD_RETEST'))
@@ -336,7 +334,7 @@ export function SignalDetails() {
   const strategyType = getStrategyType();
 
   const getStrategyLabel = () => {
-    if (strategyType === 'RSI_DIVERGENCE') return 'RSI Divergence';
+    if (strategyType === 'RSIDIVERGENCE') return 'RSI Divergence';
     if (strategyType === 'ICT_BIAS') return 'ICT Bias';
     if (strategyType === 'CRT') return 'CRT';
     if (strategyType === '3OB') return '3-OB';
@@ -345,7 +343,7 @@ export function SignalDetails() {
   };
 
   const getStrategyMonitorPath = () => {
-    if (strategyType === 'RSI_DIVERGENCE') return '/monitor/rsi';
+    if (strategyType === 'RSIDIVERGENCE') return '/monitor/rsi';
     if (strategyType === 'ICT_BIAS') return '/monitor/bias';
     if (strategyType === 'CRT') return '/monitor/crt';
     if (strategyType === '3OB') return '/monitor/3ob';
@@ -354,7 +352,7 @@ export function SignalDetails() {
   };
 
   const getPatternType = () => {
-    if (strategyType === 'RSI_DIVERGENCE') {
+    if (strategyType === 'RSIDIVERGENCE') {
       return signalData.signalType === 'BUY' ? 'Bullish Divergence' : 'Bearish Divergence';
     }
     if (strategyType === 'ICT_BIAS') {
@@ -376,7 +374,7 @@ export function SignalDetails() {
   };
 
   const getPatternVariant = () => {
-    if (strategyType === 'RSI_DIVERGENCE') {
+    if (strategyType === 'RSIDIVERGENCE') {
       const rsiVal = (signalData.metadata as any)?.rsiValue;
       return rsiVal ? `RSI ${Number(rsiVal).toFixed(1)}` : 'Divergence';
     }

@@ -55,7 +55,6 @@ export const GlobalToastManager: React.FC = () => {
         const stratMap: Record<string, string> = {
             'SUPER_ENGULFING': '/monitor/superengulfing',
             'ICT_BIAS': '/monitor/bias',
-            'RSI_DIVERGENCE': '/monitor/rsi',
             'RSIDIVERGENCE': '/monitor/rsi',
             'CRT': '/monitor/crt',
             '3OB': '/monitor/3ob',
