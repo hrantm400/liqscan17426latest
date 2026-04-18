@@ -164,5 +164,75 @@ These are **deferred**, not blocking, and must not be started without explicit a
 - **Blocker:** Option 1 needs a server maintenance window + compat testing.
   Option 2 is the cheapest (backend-only code change, one file). Option 3
   requires a product call on whether image cards still ship.
-- **Priority:** Medium — works today, but experimental flags are yellow
-  lights. Prefer to resolve before we need to do another Node upgrade.
+- **Priority:** ~~Medium~~ **High** — **raised after PR 3.1** (see Finding 1
+  below). `cookie-parser` hit the exact same TS-default-import / CJS-CJS
+  interop pattern that `satori-html` hit in PR 2.5a. Two incidents inside
+  the same quarter is a trend, not an outlier. Each new CJS dep with an
+  `export =` d.ts is now a deploy-risk item. Resolve before the next
+  non-trivial backend dep addition.
+
+### TD-10 — Tighten `JWT_EXPIRES_IN` from 1h to 15m
+- **Source:** PR 3.1 compromise.
+- **Context:** PR 3.1 landed with `JWT_EXPIRES_IN=1h` to balance
+  silent-refresh exercise (~24 refreshes/day/user → enough traffic to
+  surface any refresh-flow bug quickly) against blast radius (1 hour is
+  still meaningfully shorter than the pre-PR `7d`). Once we have ≥72h of
+  stable PR 3.1 operation (no 401 spikes, no refresh-loop incidents,
+  observed silent refresh working end-to-end in production browsers),
+  tighten to 15m for a typical industry value.
+- **Action:** single-line change — `JWT_EXPIRES_IN=15m` in
+  `liquidityscan-web/backend/.env` + `pm2 restart liquidityscan-api`.
+- **Verification:** decode a freshly-issued access token and assert
+  `exp - iat = 900`. Exercise one full silent-refresh cycle in a
+  signed-in browser.
+- **Blocker:** minimum 72 hours post-PR-3.1 stability.
+- **Estimated effort:** 10 minutes.
+
+---
+
+## Findings — PR 3.1 retrospective
+
+### Finding 1 — CJS/ESM default-import interop (second occurrence)
+- **Observed:** `cookie-parser` in PR 3.1 produced the same `(0 ,
+  module_1.default) is not a function` crash at bootstrap that
+  `satori-html` produced in PR 2.5a. Both were fixed inline with the
+  `const x = require('x')` escape hatch rather than ESM `import`.
+- **Root cause shared across both:** the package's d.ts declares
+  `export = x;` (CJS-style single-export), so TS's `import x from 'x'`
+  compiles to `x_1.default(...)`, which at runtime reads `undefined`
+  because CJS single-export modules don't populate `.default` under
+  Node's experimental ESM-in-CJS loader.
+- **Action:** elevated **TD-9** from Medium to **High** above. Until TD-9
+  is resolved (Node 22 upgrade or per-module dynamic import), any new
+  backend CJS dep should be added with:
+  1. `npm i` the package,
+  2. build immediately (`npm run build`) and `pm2 restart` on the feature
+     branch to catch the pattern before merge,
+  3. if the `.default is not a function` crash appears, use the
+     `require()` form with an eslint-disable comment and a `// TD-9`
+     marker.
+
+### Finding 2 — `refreshToken` race condition (fixed in PR 3.1)
+- **Observed:** `POST /auth/refresh` returned HTTP 500 with
+  `Unique constraint failed on (token)` when the refresh happened within
+  the same wall-clock second as the preceding `POST /auth/register` (or
+  login, or previous refresh). Reproducible 100% of the time via a
+  `register → refresh` curl pair with no intervening sleep.
+- **Root cause:** `AuthService.refreshToken()` created the new refresh
+  row **before** deleting the old one. JWT `iat` has 1-second resolution,
+  so `jwtService.sign({sub, email}, ...)` with the same payload in the
+  same second produces a byte-identical token string — which collides on
+  `RefreshToken.token @unique`.
+- **Latent on master pre-PR-3.1:** dormant because the legacy frontend
+  refreshed only on 401, never on page load. PR 3.1's `bootstrapAuth()`
+  fires on every navigation, which is fast enough to hit the second
+  boundary.
+- **Fix:** swapped delete/create order in `auth.service.ts:refreshToken`.
+  Covered by 9 new tests in `auth.controller.spec.ts`.
+- **Lesson for future PRs:** any change that adds a new trigger of a
+  rotating-token flow (e.g. push-notification refresh, cron-driven
+  session refresh, SSE reconnect) must be evaluated against same-second
+  signing collisions. Prefer either transactional delete-then-create or
+  adding a `jti: crypto.randomUUID()` claim to the signed payload so
+  every token is unique regardless of wall-clock precision.
+
