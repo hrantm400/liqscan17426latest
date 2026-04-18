@@ -235,7 +235,7 @@ export class SignalsService {
     if (toAdd.length > 0) {
       try {
         const now = new Date();
-        const createResult = await (this.prisma as any).superEngulfingSignal.createMany({
+        const createResult = await this.prisma.superEngulfingSignal.createMany({
           data: toAdd.map((s) => {
             const meta = s.metadata as any;
             const isSuperEngulfing = s.strategyType === 'SUPER_ENGULFING';
@@ -365,7 +365,7 @@ export class SignalsService {
         bias_level: (signal.metadata as any)?.bias_level as number | undefined,
       };
 
-      await (this.prisma as any).superEngulfingSignal.upsert({
+      await this.prisma.superEngulfingSignal.upsert({
         where: { id: signal.id },
         update: data,
         create: { id: signal.id, ...data },
@@ -405,13 +405,13 @@ export class SignalsService {
     // CRT: keep one latest row per symbol+timeframe, but never resurrect COMPLETED/EXPIRED — lifecycle owns outcomes.
     if (strategyType === 'CRT') {
       try {
-        const latest = await (this.prisma as any).superEngulfingSignal.findFirst({
+        const latest = await this.prisma.superEngulfingSignal.findFirst({
           where: { strategyType, symbol, timeframe },
           orderBy: { detectedAt: 'desc' },
           select: { id: true },
         });
         if (!latest) return 0;
-        const result = await (this.prisma as any).superEngulfingSignal.deleteMany({
+        const result = await this.prisma.superEngulfingSignal.deleteMany({
           where: {
             strategyType,
             symbol,
@@ -438,7 +438,7 @@ export class SignalsService {
     }
     try {
       // Find the latest signal for this combo (full record to check status)
-      const latest = await (this.prisma as any).superEngulfingSignal.findFirst({
+      const latest = await this.prisma.superEngulfingSignal.findFirst({
         where: { strategyType, symbol, timeframe },
         orderBy: { detectedAt: 'desc' },
         select: { id: true, lifecycleStatus: true },
@@ -449,7 +449,7 @@ export class SignalsService {
       // If the latest signal is COMPLETED or EXPIRED, restore it to ACTIVE
       // so it shows up as a live signal in monitors
       if (latest.lifecycleStatus === 'COMPLETED' || latest.lifecycleStatus === 'EXPIRED') {
-        await (this.prisma as any).superEngulfingSignal.update({
+        await this.prisma.superEngulfingSignal.update({
           where: { id: latest.id },
           data: { lifecycleStatus: 'ACTIVE' },
         });
@@ -461,7 +461,7 @@ export class SignalsService {
       }
 
       // Delete everything else for this combo (ALL older signals)
-      const result = await (this.prisma as any).superEngulfingSignal.deleteMany({
+      const result = await this.prisma.superEngulfingSignal.deleteMany({
         where: {
           strategyType,
           symbol,
@@ -499,7 +499,7 @@ export class SignalsService {
       const candleMs = SignalsService.TIMEFRAME_MS[timeframe] ?? 3600000;
       const expiryThreshold = new Date(now.getTime() - candleMs * RSI_STALE_MAX_CANDLES);
 
-      await (this.prisma as any).superEngulfingSignal.updateMany({
+      await this.prisma.superEngulfingSignal.updateMany({
         where: {
           strategyType: 'RSIDIVERGENCE',
           symbol,
@@ -511,7 +511,7 @@ export class SignalsService {
       });
 
       if (currentActiveIds.length > 0) {
-        await (this.prisma as any).superEngulfingSignal.updateMany({
+        await this.prisma.superEngulfingSignal.updateMany({
           where: {
             strategyType: 'RSIDIVERGENCE',
             symbol,
@@ -523,7 +523,7 @@ export class SignalsService {
         });
       }
 
-      await (this.prisma as any).superEngulfingSignal.deleteMany({
+      await this.prisma.superEngulfingSignal.deleteMany({
         where: {
           strategyType: 'RSIDIVERGENCE',
           symbol,
@@ -539,7 +539,7 @@ export class SignalsService {
 
   /** Distinct symbols that have at least one row for strategy+timeframe (e.g. live-bias symbol list). */
   async getDistinctSymbolsByStrategy(strategyType: string, timeframe: string): Promise<string[]> {
-    const rows = await (this.prisma as any).superEngulfingSignal.findMany({
+    const rows = await this.prisma.superEngulfingSignal.findMany({
       where: { strategyType, timeframe },
       select: { symbol: true },
       distinct: ['symbol'],
@@ -552,7 +552,7 @@ export class SignalsService {
       this.logger.log('Starting bulk archive cleanup...');
 
       // Use Prisma groupBy 
-      const combos = await (this.prisma as any).superEngulfingSignal.groupBy({
+      const combos = await this.prisma.superEngulfingSignal.groupBy({
         by: ['strategyType', 'symbol', 'timeframe'],
         where: {
           // SE v2 SPEC: Multiple SE signals per symbol+timeframe are allowed.
@@ -595,7 +595,7 @@ export class SignalsService {
     pnlPercent: number;
   }) {
     try {
-      await (this.prisma as any).superEngulfingSignal.update({
+      await this.prisma.superEngulfingSignal.update({
         where: { id: update.id },
         data: {
           lifecycleStatus: update.lifecycleStatus,
@@ -627,7 +627,7 @@ export class SignalsService {
   async getSignals(strategyType?: string, limit?: number, minVolume?: number): Promise<StoredSignal[]> {
     try {
       const takeCount = minVolume ? 5000 : (limit ? Math.min(limit, MAX_SIGNALS) : MAX_SIGNALS);
-      const rows = await (this.prisma as any).superEngulfingSignal.findMany({
+      const rows = await this.prisma.superEngulfingSignal.findMany({
         where: strategyType ? { strategyType } : undefined,
         orderBy: { detectedAt: 'desc' },
         take: takeCount,
@@ -727,7 +727,7 @@ export class SignalsService {
    */
   async getSignalById(id: string): Promise<StoredSignal | null> {
     try {
-      const row = await (this.prisma as any).superEngulfingSignal.findUnique({
+      const row = await this.prisma.superEngulfingSignal.findUnique({
         where: { id },
       });
       if (!row) return null;
@@ -770,7 +770,7 @@ export class SignalsService {
   }> {
     try {
       const where = strategyType ? { strategyType } : undefined;
-      const rows = await (this.prisma as any).superEngulfingSignal.findMany({ where });
+      const rows = await this.prisma.superEngulfingSignal.findMany({ where });
 
       const total = rows.length;
 
@@ -821,7 +821,7 @@ export class SignalsService {
       const nextDate = new Date(targetDate);
       nextDate.setDate(nextDate.getDate() + 1);
 
-      const rows = await (this.prisma as any).superEngulfingSignal.findMany({
+      const rows = await this.prisma.superEngulfingSignal.findMany({
         where: {
           detectedAt: {
             gte: targetDate.toISOString(),
@@ -912,7 +912,7 @@ export class SignalsService {
       const nextDate = new Date(targetDate);
       nextDate.setDate(nextDate.getDate() + 1);
 
-      const rows = await (this.prisma as any).superEngulfingSignal.findMany({
+      const rows = await this.prisma.superEngulfingSignal.findMany({
         where: {
           detectedAt: {
             gte: targetDate.toISOString(),

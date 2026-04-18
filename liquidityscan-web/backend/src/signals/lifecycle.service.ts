@@ -98,7 +98,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
             const now = new Date();
 
             // Find and delete SE signals that are closed and past their delete_at time
-            const result = await (this.prisma as any).superEngulfingSignal.deleteMany({
+            const result = await this.prisma.superEngulfingSignal.deleteMany({
                 where: {
                     strategyType: 'SUPER_ENGULFING',
                     lifecycleStatus: { in: ['COMPLETED', 'EXPIRED'] },
@@ -106,7 +106,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
                 },
             });
 
-            const legacyClosed = await (this.prisma as any).superEngulfingSignal.deleteMany({
+            const legacyClosed = await this.prisma.superEngulfingSignal.deleteMany({
                 where: {
                     strategyType: 'SUPER_ENGULFING',
                     lifecycleStatus: { in: ['COMPLETED', 'EXPIRED'] },
@@ -148,7 +148,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
             // ICT BIAS LIFECYCLE — Next Candle Body Close Validation
             // ============================
             // Scanner inserts ICT_BIAS as ACTIVE (Option A: no scanner-side replacement); legacy rows may still be PENDING
-            const biasSignals = await (this.prisma as any).superEngulfingSignal.findMany({
+            const biasSignals = await this.prisma.superEngulfingSignal.findMany({
                 where: {
                     strategyType: 'ICT_BIAS',
                     lifecycleStatus: { in: ['PENDING', 'ACTIVE'] },
@@ -204,7 +204,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
                         if (!transitioned) return null;
 
                         try {
-                            await (this.prisma as any).superEngulfingSignal.update({
+                            await this.prisma.superEngulfingSignal.update({
                                 where: { id: bias.id },
                                 data: {
                                     bias_result: result,
@@ -254,7 +254,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
      * RSIDIVERGENCE stale rows are closed by scanner-driven closeStaleRsiSignals (SignalsService).
      */
     private async checkCrtLifecycle(): Promise<void> {
-        const signals = await (this.prisma as any).superEngulfingSignal.findMany({
+        const signals = await this.prisma.superEngulfingSignal.findMany({
             where: {
                 strategyType: 'CRT',
                 lifecycleStatus: { in: ['PENDING', 'ACTIVE'] },
@@ -351,7 +351,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
                 if (!transitioned) continue;
 
                 try {
-                    await (this.prisma as any).superEngulfingSignal.update({
+                    await this.prisma.superEngulfingSignal.update({
                         where: { id: signal.id },
                         data: {
                             se_close_reason: result,
@@ -385,7 +385,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
     private async deleteStaleCrtCompleted(): Promise<void> {
         try {
             const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-            const res = await (this.prisma as any).superEngulfingSignal.deleteMany({
+            const res = await this.prisma.superEngulfingSignal.deleteMany({
                 where: {
                     strategyType: 'CRT',
                     lifecycleStatus: 'COMPLETED',
@@ -571,7 +571,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
         const now = Date.now();
 
         // ── PART 1: CISD expiry (200 candles) ──
-        const cisdSignals = await (this.prisma as any).superEngulfingSignal.findMany({
+        const cisdSignals = await this.prisma.superEngulfingSignal.findMany({
             where: {
                 strategyType: 'CISD',
                 lifecycleStatus: { in: ['PENDING', 'ACTIVE'] },
@@ -593,7 +593,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
                 if (!transitioned) continue;
 
                 try {
-                    await (this.prisma as any).superEngulfingSignal.update({
+                    await this.prisma.superEngulfingSignal.update({
                         where: { id: signal.id },
                         data: { se_close_reason: 'CANDLE_EXPIRY', closedAt: new Date() },
                     });
@@ -608,7 +608,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
         }
 
         // ── PART 2: Hard-delete closed CISD + legacy CISD_RETEST >24h ago ──
-        await (this.prisma as any).superEngulfingSignal.deleteMany({
+        await this.prisma.superEngulfingSignal.deleteMany({
             where: {
                 strategyType: { in: ['CISD', 'CISD_RETEST'] },
                 lifecycleStatus: { in: ['COMPLETED', 'EXPIRED'] },
@@ -806,7 +806,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
      */
     private async checkSuperEngulfingV2(): Promise<void> {
         // Query live SE signals (lifecycleStatus is the canonical source of truth).
-        const liveSeSignals = await (this.prisma as any).superEngulfingSignal.findMany({
+        const liveSeSignals = await this.prisma.superEngulfingSignal.findMany({
             where: {
                 strategyType: 'SUPER_ENGULFING',
                 lifecycleStatus: { in: ['PENDING', 'ACTIVE'] },
@@ -955,7 +955,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
                 if (!result.changed) {
                     // Even if processSeSignal didn't change anything, sync candle_count if needed
                     if (candleInfo.actualCandleCount !== currentCandleCount) {
-                        await (this.prisma as any).superEngulfingSignal.update({
+                        await this.prisma.superEngulfingSignal.update({
                             where: { id: signal.id },
                             data: {
                                 candle_count: candleInfo.actualCandleCount,
@@ -1036,7 +1036,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
                 }
 
                 // Persist to DB
-                await (this.prisma as any).superEngulfingSignal.update({
+                await this.prisma.superEngulfingSignal.update({
                     where: { id: signal.id },
                     data: updateData,
                 });

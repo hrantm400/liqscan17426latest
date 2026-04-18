@@ -41,7 +41,7 @@ export class CisdScanner {
 
         for (const sig of allSigs) {
             const id = `CISD-${symbol}-${timeframe}-${sig.time}`;
-            const existing = await (this.prisma as any).superEngulfingSignal.findUnique({ where: { id } });
+            const existing = await this.prisma.superEngulfingSignal.findUnique({ where: { id } });
             if (existing) continue;
 
             const cisdDirection = sig.direction === 'BUY' ? 'BULL' : 'BEAR';
@@ -142,7 +142,7 @@ export class CisdScanner {
     }
 
     private async enforceMaxActive(symbol: string, timeframe: string): Promise<void> {
-        const active = await (this.prisma as any).superEngulfingSignal.findMany({
+        const active = await this.prisma.superEngulfingSignal.findMany({
             where: {
                 strategyType: 'CISD',
                 symbol,
@@ -158,7 +158,7 @@ export class CisdScanner {
 
         for (const signal of toInvalidate) {
             try {
-                await (this.prisma as any).superEngulfingSignal.update({
+                await this.prisma.superEngulfingSignal.update({
                     where: { id: signal.id },
                     data: {
                         lifecycleStatus: 'EXPIRED',
