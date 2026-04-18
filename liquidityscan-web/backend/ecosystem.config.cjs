@@ -20,7 +20,11 @@ module.exports = {
       env: {
         NODE_ENV: 'production',
         // Align with PM2 limit so V8 can use heap before OOM during large /signals + live-bias workloads.
-        NODE_OPTIONS: '--max-old-space-size=1536',
+        // --experimental-require-module is required for Node 20 to CJS-require()
+        // the ESM-only `satori-html` pulled in by TelegramService (used for TG
+        // image cards). Node 22 makes this a default, so the flag can be dropped
+        // after the server node is upgraded.
+        NODE_OPTIONS: '--max-old-space-size=1536 --experimental-require-module',
         // Uncomment to disable hourly + POST /signals/scan market scanning (dev / saving Binance keys):
         // MARKET_SCANNER_ENABLED: 'false',
       },

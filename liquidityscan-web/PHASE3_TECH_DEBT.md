@@ -138,3 +138,31 @@ These are **deferred**, not blocking, and must not be started without explicit a
      dashboard is ever added.
 - **Blocker:** None. Low-risk schema additive migration, can land as part of
   a broader affiliate observability PR.
+
+### TD-9 — Remove `--experimental-require-module` Node flag (ESM/CJS debt)
+- **Source:** PR 2.5a deploy (commit `daa92f8`).
+- **Problem:** `satori-html` is ESM-only; `TelegramService` imports it via the
+  sync `require()` chain at module load time. Node 20.18 requires the
+  `--experimental-require-module` flag (wired into `ecosystem.config.cjs`
+  `NODE_OPTIONS`) to boot the API at all — a fresh `npm run build + pm2
+  restart` without the flag hits `ERR_REQUIRE_ESM` deterministically. Makes
+  PM2 config depend on experimental Node runtime semantics.
+- **Risk:** Future Node upgrade may change or remove the flag's behavior.
+  Production depends on an experimental-prefixed feature. Also: any
+  contributor who rebuilds dist locally without inheriting this env will
+  see a confusing crash.
+- **Options:**
+  1. Upgrade server Node to >= 22 (`require(ESM)` is default-on and stable).
+     Test compatibility of all other deps (Prisma, Nest, Playwright,
+     sharp-equivalents) in staging first.
+  2. Convert the `satori-html` import in `telegram.service.ts` to dynamic
+     `await import('satori-html')` inside the method that actually renders
+     image cards. No flag needed; caller becomes async but already is.
+  3. Audit whether `satori-html` is still used at all (it was added for
+     OG-image/signal-card generation). If feature is off or unused, remove
+     the dep entirely — removes the whole class of ESM/CJS boundary bugs.
+- **Blocker:** Option 1 needs a server maintenance window + compat testing.
+  Option 2 is the cheapest (backend-only code change, one file). Option 3
+  requires a product call on whether image cards still ship.
+- **Priority:** Medium — works today, but experimental flags are yellow
+  lights. Prefer to resolve before we need to do another Node upgrade.
