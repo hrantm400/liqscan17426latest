@@ -1,5 +1,5 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, UserTier } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { MailService } from '../mail/mail.service';
 
@@ -239,7 +239,7 @@ export class PaymentsService {
       durationDays = 365;
     }
 
-    const tier = isAnnual ? 'PAID_ANNUAL' : 'PAID_MONTHLY';
+    const tier: UserTier = isAnnual ? 'PAID_ANNUAL' : 'PAID_MONTHLY';
 
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + durationDays);

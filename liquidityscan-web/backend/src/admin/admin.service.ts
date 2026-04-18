@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Prisma, UserTier } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
 import { MailService } from '../mail/mail.service';
@@ -133,7 +134,7 @@ export class AdminService {
     return user;
   }
 
-  async updateUser(id: string, data: { name?: string; isAdmin?: boolean; tier?: string; subscriptionStatus?: string; subscriptionExpiresAt?: string }) {
+  async updateUser(id: string, data: { name?: string; isAdmin?: boolean; tier?: UserTier; subscriptionStatus?: string; subscriptionExpiresAt?: string }) {
     const updateData: any = {};
     if (data.name !== undefined) updateData.name = data.name;
     if (data.isAdmin !== undefined) updateData.isAdmin = data.isAdmin;
@@ -441,7 +442,7 @@ export class AdminService {
     return { success: true };
   }
 
-  async setUserSubscription(id: string, data: { tier: string; expiresAt?: string | null; status?: string }) {
+  async setUserSubscription(id: string, data: { tier: UserTier; expiresAt?: string | null; status?: string }) {
     const validTiers = ['FREE', 'PAID_MONTHLY', 'PAID_ANNUAL'];
     if (!validTiers.includes(data.tier)) {
       throw new BadRequestException(`Invalid tier: ${data.tier}`);
@@ -521,7 +522,7 @@ export class AdminService {
     channel: 'email' | 'telegram' | 'both';
     filter: 'all' | 'free' | 'paid';
   }) {
-    const where =
+    const where: Prisma.UserWhereInput =
       args.filter === 'free'
         ? { tier: 'FREE' }
         : args.filter === 'paid'

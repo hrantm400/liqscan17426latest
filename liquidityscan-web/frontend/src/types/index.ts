@@ -75,7 +75,6 @@ export interface Signal {
   pnlPercent?: number;
   outcome?: string; // deprecated
   // SE Advanced Lifecycle (legacy)
-  direction?: string;
   se_entry_zone?: number;
   se_sl?: number;
   se_tp1?: number;

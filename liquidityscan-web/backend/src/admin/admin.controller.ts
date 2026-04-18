@@ -11,6 +11,7 @@ import {
   UseGuards,
   Req,
 } from '@nestjs/common';
+import { UserTier } from '@prisma/client';
 import { AdminService } from './admin.service';
 import { AdminGuard } from './guards/admin.guard';
 
@@ -54,14 +55,14 @@ export class AdminController {
   }
 
   @Put('users/:id')
-  async updateUser(@Param('id') id: string, @Body() data: { name?: string; isAdmin?: boolean; tier?: string; subscriptionStatus?: string; subscriptionExpiresAt?: string }) {
+  async updateUser(@Param('id') id: string, @Body() data: { name?: string; isAdmin?: boolean; tier?: UserTier; subscriptionStatus?: string; subscriptionExpiresAt?: string }) {
     return this.adminService.updateUser(id, data);
   }
 
   @Put('users/:id/subscription')
   async setUserSubscription(
     @Param('id') id: string,
-    @Body() data: { tier: string; expiresAt?: string | null; status?: string },
+    @Body() data: { tier: UserTier; expiresAt?: string | null; status?: string },
   ) {
     return this.adminService.setUserSubscription(id, data);
   }

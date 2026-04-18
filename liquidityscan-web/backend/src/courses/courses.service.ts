@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { UserTier } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { CreateCourseDto, UpdateCourseDto, CreateChapterDto, CreateLessonDto, UpdateLessonDto } from './dto/create-course.dto';
@@ -8,7 +9,7 @@ type CourseAccessUser = {
     subscriptionId: string | null;
     subscriptionStatus: string;
     subscriptionExpiresAt: Date | null;
-    tier: string;
+    tier: UserTier;
 };
 
 @Injectable()

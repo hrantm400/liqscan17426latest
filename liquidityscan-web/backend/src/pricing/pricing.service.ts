@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import { UserTier } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AppConfigService } from '../app-config/app-config.service';
 
@@ -114,7 +115,7 @@ export class PricingService {
     }
 
     /** True if tier should receive paid-equivalent product limits (not billing). */
-    async hasFullProductAccessForTier(tier: string): Promise<boolean> {
+    async hasFullProductAccessForTier(tier: UserTier): Promise<boolean> {
         if (tier !== 'FREE') return true;
         return this.appConfig.getLaunchPromoFullAccess();
     }

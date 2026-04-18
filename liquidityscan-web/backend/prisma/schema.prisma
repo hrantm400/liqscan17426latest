@@ -24,6 +24,13 @@ enum SignalResult {
   LOSS
 }
 
+enum UserTier {
+  FREE
+  PAID_MONTHLY
+  PAID_ANNUAL
+  FULL_ACCESS
+}
+
 
 model User {
   id                  String    @id @default(uuid())
@@ -41,7 +48,7 @@ model User {
   timezone            String?
 
   // Pricing tier
-  tier              String    @default("FREE")  // FREE, PAID_MONTHLY, PAID_ANNUAL
+  tier              UserTier  @default(FREE)
   dailyRsiUsed      Int       @default(0)
   dailyBiasUsed     Int       @default(0)
   dailyQuotaResetAt DateTime  @default(now())
@@ -290,7 +297,10 @@ model SuperEngulfingSignal {
   lifecycleStatus SignalStatus  @default(PENDING)
   result          SignalResult?
   
-  // LEGACY SE TRACKING FIELDS (kept for backward compat)
+  // LEGACY SE TRACKING FIELDS — DEPRECATED. Do not add new readers/writers.
+  // se_close_reason is shared with CRT/3OB scanners (1206 non-SE rows rely on it).
+  // Slated for removal in a future PR after frontend SignalDetails/InteractiveLiveChart/
+  // SignalStatusBadge refactor to drop fallback `??` reads of these columns.
   direction       String?       // "BULL" or "BEAR" (legacy)
   se_entry_zone   Float?        // Signal candle close (entry price) - legacy
   se_sl           Float?        // Initial wick SL - legacy
@@ -340,7 +350,7 @@ model SuperEngulfingSignal {
   bias_result       String?       // "WIN" or "FAILED"
   bias_validated_at DateTime?     // When next candle closed
   
-  // Deprecated Fields
+  // Deprecated Fields — DEPRECATED, see legacy block above for removal plan.
   status          String        @default("ACTIVE")
   outcome         String?
 
