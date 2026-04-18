@@ -31,7 +31,6 @@ export class ThreeOBScanner {
                 price: sig.price,
                 detectedAt: new Date(sig.time).toISOString(),
                 lifecycleStatus: 'ACTIVE',
-                status: 'ACTIVE',
                 metadata: {
                     direction3ob: sig.direction === 'BUY' ? 'BULLISH' : 'BEARISH',
                     lowestlow: sig.lowestLow,

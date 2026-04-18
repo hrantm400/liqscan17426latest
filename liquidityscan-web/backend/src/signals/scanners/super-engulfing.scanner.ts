@@ -38,7 +38,6 @@ export class SuperEngulfingScanner {
                 price: sig.price,
                 detectedAt: new Date(sig.time).toISOString(),
                 lifecycleStatus: 'ACTIVE',
-                status: 'ACTIVE',
                 metadata: {
                     pattern: sig.pattern,
                     type: sig.type,

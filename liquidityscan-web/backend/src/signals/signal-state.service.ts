@@ -27,25 +27,16 @@ export class SignalStateService {
             if (params.closedPrice !== undefined) data.closedPrice = params.closedPrice;
             if (params.pnlPercent !== undefined) data.pnlPercent = Math.round(params.pnlPercent * 100) / 100;
             data.closedAt = new Date();
-
-            // Keep old fields in sync for backward compatibility during migration
-            data.status = params.result === SignalResult.WIN ? 'HIT_TP' : 'HIT_SL';
-            data.outcome = data.status;
         }
         else if (newStatus === SignalStatus.EXPIRED) {
             if (params?.closedPrice !== undefined) data.closedPrice = params.closedPrice;
             data.closedAt = new Date();
-
-            // Sync backward compat
-            data.status = 'EXPIRED';
-            data.outcome = 'EXPIRED';
         }
         else if (newStatus === SignalStatus.ARCHIVED) {
-            // Keep closedAt or calculate it if missing, but usually ARCHIVED means it's already closed.
+            // Usually ARCHIVED means the row is already closed.
         }
         else if (newStatus === SignalStatus.ACTIVE) {
-            data.status = 'ACTIVE';
-            data.outcome = null;
+            // Canonical transition — no mirrored fields to reset.
         }
 
         try {

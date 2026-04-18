@@ -3,18 +3,17 @@ import { Signal } from '../../types';
 /**
  * Lifecycle-aware status badge for signal rows.
  * Shows outcome with close reason, or pulsing state for live signals.
- * 
- * SE SCANNER V2: Supports new state/result_v2/result_type fields for SE signals.
+ *
+ * Reads only the canonical columns: lifecycleStatus, result, se_close_reason.
  */
 export function SignalStatusBadge({ signal }: { signal: Signal }) {
-    const { lifecycleStatus, result, se_close_reason, pnlPercent, strategyType, state, result_v2, result_type } = signal;
+    const { lifecycleStatus, result, se_close_reason, pnlPercent, strategyType } = signal;
 
     // ============================================
-    // SE Scanner v2: Handle new state-based status
+    // SUPER_ENGULFING — dedicated WON/LOST styling with close-reason label
     // ============================================
-    if (strategyType === 'SUPER_ENGULFING' && state) {
-        // SE v2: LIVE state
-        if (state === 'live') {
+    if (strategyType === 'SUPER_ENGULFING') {
+        if (lifecycleStatus === 'PENDING' || lifecycleStatus === 'ACTIVE') {
             const tp1Label = signal.tp1_hit ? '(TP1 Hit)' : '';
             return (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-primary/10 text-primary border border-primary/20 shadow-[0_0_8px_rgba(19,236,55,0.15)]">
@@ -26,14 +25,14 @@ export function SignalStatusBadge({ signal }: { signal: Signal }) {
                 </span>
             );
         }
-        
-        // SE v2: CLOSED + WON
-        if (state === 'closed' && result_v2 === 'won') {
+
+        if (lifecycleStatus === 'COMPLETED' && result === 'WIN') {
             let reasonLabel = '';
-            if (result_type === 'tp2_full') reasonLabel = 'TP2 Full';
-            else if (result_type === 'tp1') reasonLabel = 'TP1';
-            else if (result_type === 'candle_expiry') reasonLabel = 'Expiry';
-            
+            if (se_close_reason === 'TP3') reasonLabel = 'TP3';
+            else if (se_close_reason === 'TP2') reasonLabel = 'TP2';
+            else if (se_close_reason === 'TP1') reasonLabel = 'TP1';
+            else if (se_close_reason === 'EXPIRED') reasonLabel = 'Expiry';
+
             return (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 shadow-[0_0_8px_rgba(16,185,129,0.15)]">
                     <span className="text-xs">✅</span>
@@ -42,13 +41,12 @@ export function SignalStatusBadge({ signal }: { signal: Signal }) {
                 </span>
             );
         }
-        
-        // SE v2: CLOSED + LOST
-        if (state === 'closed' && result_v2 === 'lost') {
+
+        if (lifecycleStatus === 'COMPLETED' && result === 'LOSS') {
             let reasonLabel = '';
-            if (result_type === 'sl') reasonLabel = 'SL';
-            else if (result_type === 'candle_expiry') reasonLabel = 'Expiry';
-            
+            if (se_close_reason === 'SL') reasonLabel = 'SL';
+            else if (se_close_reason === 'EXPIRED') reasonLabel = 'Expiry';
+
             return (
                 <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-red-500/15 text-red-400 border border-red-500/20">
                     <span className="text-xs">❌</span>

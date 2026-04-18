@@ -471,22 +471,3 @@ export function getMaxCandlesForTimeframe(timeframe: string): number {
     }
 }
 
-/**
- * Map v2 result to legacy SignalResult enum
- */
-export function mapResultToLegacy(result_v2: SeResult): 'WIN' | 'LOSS' | null {
-    if (result_v2 === 'won') return 'WIN';
-    if (result_v2 === 'lost') return 'LOSS';
-    return null;
-}
-
-/**
- * Map v2 state to legacy SignalStatus enum
- */
-export function mapStateToLegacyStatus(state: SeState, result_v2: SeResult): string {
-    if (state === 'live') return 'ACTIVE';
-    // closed
-    if (result_v2 === 'won') return 'COMPLETED';
-    if (result_v2 === 'lost') return 'COMPLETED';
-    return 'COMPLETED';
-}

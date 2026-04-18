@@ -7,8 +7,6 @@ import {
     processSeSignal,
     SeRuntimeSignal,
     SeDirection,
-    mapResultToLegacy,
-    mapStateToLegacyStatus,
 } from './se-runtime';
 
 const STRATEGY_CONFIG: Record<string, { tpPercent: number; slPercent: number; expiryCandleCount: number }> = {
@@ -103,7 +101,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
             const result = await (this.prisma as any).superEngulfingSignal.deleteMany({
                 where: {
                     strategyType: 'SUPER_ENGULFING',
-                    state: 'closed',
+                    lifecycleStatus: { in: ['COMPLETED', 'EXPIRED'] },
                     delete_at: { lte: now },
                 },
             });
@@ -111,7 +109,7 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
             const legacyClosed = await (this.prisma as any).superEngulfingSignal.deleteMany({
                 where: {
                     strategyType: 'SUPER_ENGULFING',
-                    state: 'closed',
+                    lifecycleStatus: { in: ['COMPLETED', 'EXPIRED'] },
                     delete_at: null,
                     closedAt: { lt: new Date(now.getTime() - 48 * 60 * 60 * 1000) },
                 },
@@ -807,11 +805,11 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
      * For 4H signals, a candle closes every 4 hours. For 1D every 24 hours. etc.
      */
     private async checkSuperEngulfingV2(): Promise<void> {
-        // Query SE signals with v2 state='live'
+        // Query live SE signals (lifecycleStatus is the canonical source of truth).
         const liveSeSignals = await (this.prisma as any).superEngulfingSignal.findMany({
             where: {
                 strategyType: 'SUPER_ENGULFING',
-                state: 'live',
+                lifecycleStatus: { in: ['PENDING', 'ACTIVE'] },
             },
         });
 
@@ -883,12 +881,14 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
                     tp1_price: signal.tp1_price ?? signal.se_tp1 ?? 0,
                     tp2_price: signal.tp2_price ?? signal.se_tp2 ?? 0,
                     tp3_price: signal.tp3_price ?? 0,
-                    state: signal.state as 'live' | 'closed',
+                    // SE runtime state reconstructed from canonical lifecycleStatus.
+                    // Live SE signals here are PENDING/ACTIVE, so always 'live' with no prior result.
+                    state: 'live',
                     tp1_hit: signal.tp1_hit ?? signal.se_r_ratio_hit ?? false,
                     tp2_hit: signal.tp2_hit ?? false,
                     tp3_hit: signal.tp3_hit ?? false,
-                    result_v2: signal.result_v2 ?? null,
-                    result_type: signal.result_type ?? null,
+                    result_v2: null,
+                    result_type: null,
                     candle_count: candleInfo.isCandleClose ? candleInfo.actualCandleCount - 1 : candleInfo.actualCandleCount,
                     max_candles: signal.max_candles ?? 10,
                     triggered_at: triggeredAt,
@@ -966,17 +966,13 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
                     return { type: 'unchanged' };
                 }
 
-                // Prepare update data
+                // Prepare update data — writes to canonical lifecycleStatus/result + v3 fields.
                 const updateData: any = {};
 
-                // V2 fields
-                if (result.state !== undefined) updateData.state = result.state;
                 if (result.tp1_hit !== undefined) updateData.tp1_hit = result.tp1_hit;
                 if (result.tp2_hit !== undefined) updateData.tp2_hit = result.tp2_hit;
                 if (result.tp3_hit !== undefined) updateData.tp3_hit = result.tp3_hit;
                 if (result.current_sl_price !== undefined) updateData.current_sl_price = result.current_sl_price;
-                if (result.result_v2 !== undefined) updateData.result_v2 = result.result_v2;
-                if (result.result_type !== undefined) updateData.result_type = result.result_type;
                 if (result.candle_count !== undefined) {
                     updateData.candle_count = result.candle_count;
                 } else {
@@ -985,7 +981,6 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
                 if (result.closed_at_v2 !== undefined) updateData.closed_at_v2 = result.closed_at_v2;
                 if (result.delete_at !== undefined) updateData.delete_at = result.delete_at;
 
-                // Also update legacy fields for backward compat
                 if (result.tp1_hit !== undefined) {
                     updateData.se_r_ratio_hit = result.tp1_hit;
                 }
@@ -994,14 +989,15 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
                 }
                 updateData.candles_tracked = updateData.candle_count;
 
-                // If signal closed, update legacy lifecycle fields
+                // If signal closed, write canonical lifecycle fields + se_close_reason for UI.
                 if (result.state === 'closed') {
-                    const legacyResult = mapResultToLegacy(result.result_v2 ?? null);
-                    const legacyStatus = mapStateToLegacyStatus(result.state, result.result_v2 ?? null);
+                    const canonicalResult: 'WIN' | 'LOSS' | null =
+                        result.result_v2 === 'won' ? 'WIN' :
+                        result.result_v2 === 'lost' ? 'LOSS' : null;
 
-                    updateData.lifecycleStatus = legacyStatus;
-                    if (legacyResult) {
-                        updateData.result = legacyResult;
+                    updateData.lifecycleStatus = 'COMPLETED';
+                    if (canonicalResult) {
+                        updateData.result = canonicalResult;
                     }
                     updateData.closedAt = result.closed_at_v2;
 
@@ -1021,7 +1017,6 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
                     const closePrice = updateData.se_close_price;
                     updateData.close_price = closePrice; // v3 spec field
 
-                    // Map result_type to legacy se_close_reason
                     if (result.result_type === 'tp3_full') {
                         updateData.se_close_reason = 'TP3';
                     } else if (result.result_type === 'tp2') {
@@ -1034,11 +1029,6 @@ export class LifecycleService implements OnModuleInit, OnModuleDestroy {
                         updateData.se_close_reason = 'EXPIRED';
                     }
 
-                    // Legacy status/outcome fields
-                    updateData.status = legacyResult === 'WIN' ? 'HIT_TP' : legacyResult === 'LOSS' ? 'HIT_SL' : 'EXPIRED';
-                    updateData.outcome = updateData.status;
-
-                    // Also update legacy se_r_ratio_hit for tp2/tp3 cases
                     if (result.tp2_hit !== undefined) updateData.se_r_ratio_hit = true;
 
                     const isBull = runtimeSignal.direction_v2 === 'bullish';

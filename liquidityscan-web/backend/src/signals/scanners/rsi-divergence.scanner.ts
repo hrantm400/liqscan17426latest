@@ -39,7 +39,6 @@ export class RsiDivergenceScanner {
                 price: signal.price,
                 detectedAt: new Date(signal.time).toISOString(),
                 lifecycleStatus: 'ACTIVE' as const,
-                status: 'ACTIVE' as const,
                 metadata: {
                     divergenceType: signal.type,
                     rsiValue: signal.rsiValue,

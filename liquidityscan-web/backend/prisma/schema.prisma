@@ -318,7 +318,6 @@ model SuperEngulfingSignal {
   // ============================================
   // SE SCANNER V2 FIELDS (per new specification)
   // ============================================
-  state           String?       @default("live")  // "live" or "closed" - only these two states
   type_v2         String?       // always "se"
   pattern_v2      String?       // one of 8: REV_BULLISH, REV_BEARISH, REV_PLUS_BULLISH, REV_PLUS_BEARISH, RUN_BULLISH, RUN_BEARISH, RUN_PLUS_BULLISH, RUN_PLUS_BEARISH
   direction_v2    String?       // "bullish" or "bearish"
@@ -334,8 +333,6 @@ model SuperEngulfingSignal {
   tp2_hit         Boolean       @default(false)   // Has TP2 been reached?
   tp3_hit         Boolean       @default(false)   // Has TP3 been reached?
   
-  result_v2       String?       // "won" or "lost" - null while live
-  result_type     String?       // "tp1", "tp2", "tp3_full", "sl", "candle_expiry" - null while live
   close_price     Float?        // The price at which signal closed (preset level or market price at expiry)
   
   candle_count    Int           @default(0)       // Starts at 0, increments on each candle close
@@ -349,10 +346,6 @@ model SuperEngulfingSignal {
   bias_level        Float?        // The close price that confirmed bias
   bias_result       String?       // "WIN" or "FAILED"
   bias_validated_at DateTime?     // When next candle closed
-  
-  // Deprecated Fields — DEPRECATED, see legacy block above for removal plan.
-  status          String        @default("ACTIVE")
-  outcome         String?
 
   metadata        Json?
   closedAt        DateTime?
@@ -363,7 +356,6 @@ model SuperEngulfingSignal {
 
   @@index([strategyType, detectedAt(sort: Desc)])
   @@index([strategyType, symbol, timeframe])
-  @@index([status])
 
   @@map("super_engulfing_signals")
 }

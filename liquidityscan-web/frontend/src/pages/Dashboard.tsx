@@ -85,7 +85,7 @@ export const Dashboard: React.FC = () => {
       ? allSignals.filter(s => (volumeMap.get(s.symbol) || 0) >= 20_000_000)
       : allSignals;
     // Only count PENDING/ACTIVE as "active" signals
-    const signals = volFiltered.filter(s => s.lifecycleStatus === 'PENDING' || s.lifecycleStatus === 'ACTIVE' || s.state === 'live');
+    const signals = volFiltered.filter(s => s.lifecycleStatus === 'PENDING' || s.lifecycleStatus === 'ACTIVE');
     summary.total = signals.length;
     signals.forEach((signal) => {
       const tf = signal.timeframe as Timeframe;

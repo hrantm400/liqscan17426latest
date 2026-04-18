@@ -38,7 +38,6 @@ export class IctBiasScanner {
                 price: candles[candles.length - 1].close,
                 detectedAt: new Date(sig.time).toISOString(),
                 lifecycleStatus: 'ACTIVE',
-                status: 'ACTIVE',
                 metadata: {
                     bias: sig.bias,
                     prevHigh: sig.prevHigh,

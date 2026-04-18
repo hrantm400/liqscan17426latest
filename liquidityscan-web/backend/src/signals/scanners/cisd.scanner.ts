@@ -104,7 +104,6 @@ export class CisdScanner {
                           price: sig.price,
                           detectedAt: new Date(sig.time).toISOString(),
                           lifecycleStatus: 'COMPLETED',
-                          status: 'CLOSED',
                           closedAt: nowIso,
                           suppressTelegramAlert: true,
                           metadata: {
@@ -163,7 +162,6 @@ export class CisdScanner {
                     where: { id: signal.id },
                     data: {
                         lifecycleStatus: 'EXPIRED',
-                        status: 'EXPIRED',
                         closedAt: new Date(),
                         se_close_reason: 'INVALIDATED',
                     },

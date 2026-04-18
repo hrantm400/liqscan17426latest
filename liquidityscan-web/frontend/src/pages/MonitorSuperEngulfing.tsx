@@ -143,18 +143,9 @@ export function MonitorSuperEngulfing() {
   const statusCounts = useMemo(() => {
     return {
       total: globalValidSignals.length,
-      live: globalValidSignals.filter((s) => {
-        if (s.strategyType === 'SUPER_ENGULFING' && s.state) return s.state === 'live';
-        return s.lifecycleStatus === 'PENDING' || s.lifecycleStatus === 'ACTIVE';
-      }).length,
-      closed: globalValidSignals.filter((s) => {
-        if (s.strategyType === 'SUPER_ENGULFING' && s.state) return s.state === 'closed';
-        return s.lifecycleStatus === 'COMPLETED' || s.lifecycleStatus === 'EXPIRED';
-      }).length,
-      archive: globalValidSignals.filter((s) => {
-        if (s.strategyType === 'SUPER_ENGULFING') return false;
-        return s.lifecycleStatus === 'ARCHIVED';
-      }).length,
+      live: globalValidSignals.filter((s) => s.lifecycleStatus === 'PENDING' || s.lifecycleStatus === 'ACTIVE').length,
+      closed: globalValidSignals.filter((s) => s.lifecycleStatus === 'COMPLETED' || s.lifecycleStatus === 'EXPIRED').length,
+      archive: globalValidSignals.filter((s) => s.lifecycleStatus === 'ARCHIVED').length,
     };
   }, [globalValidSignals]);
 

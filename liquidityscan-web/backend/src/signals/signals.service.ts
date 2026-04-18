@@ -32,7 +32,6 @@ export type WebhookSignalInput = {
   closedAt?: string;
   lifecycleStatus?: string;
   result?: string;
-  status?: string;
   metadata?: Record<string, unknown>;
   /** When true, skip Telegram for this row (e.g. historical CISD markers). */
   suppressTelegramAlert?: boolean;
@@ -48,12 +47,10 @@ class StoredSignal {
   detectedAt: string;
   lifecycleStatus?: string;
   result?: string;
-  status: string;
   metadata?: unknown;
   closedAt?: string;
   closedPrice?: number;
   pnlPercent?: number;
-  outcome?: string;
 }
 
 /** Grno payload: body.signals is array of { symbol, price, signals_by_timeframe: { "1d": { signals: ["REV Bull"], price, time }, ... } } */
@@ -133,12 +130,10 @@ export class SignalsService {
       detectedAt: row.detectedAt,
       lifecycleStatus: row.lifecycleStatus,
       result: row.result,
-      status: row.status,
       metadata: row.metadata,
       closedAt: row.closedAt,
       closedPrice: row.closedPrice ? Number(row.closedPrice) : undefined,
       pnlPercent: row.pnlPercent ? Number(row.pnlPercent) : undefined,
-      outcome: row.outcome,
     };
   }
 
@@ -177,7 +172,7 @@ export class SignalsService {
    * Add signals. Accepted strategyTypes: SUPER_ENGULFING, RSIDIVERGENCE, ICT_BIAS, CRT, 3OB, CISD.
    * If an item has signals_by_timeframe but no timeframe (raw Grno single-coin), expand it first.
    */
-  async addSignals(items: Array<{ id?: string; strategyType?: string; symbol: string; timeframe?: string; signalType?: string; price: number; detectedAt?: string; closedAt?: string; lifecycleStatus?: string; result?: string; status?: string; metadata?: Record<string, unknown>; suppressTelegramAlert?: boolean; signals_by_timeframe?: Record<string, unknown> }>): Promise<number> {
+  async addSignals(items: Array<{ id?: string; strategyType?: string; symbol: string; timeframe?: string; signalType?: string; price: number; detectedAt?: string; closedAt?: string; lifecycleStatus?: string; result?: string; metadata?: Record<string, unknown>; suppressTelegramAlert?: boolean; signals_by_timeframe?: Record<string, unknown> }>): Promise<number> {
     const allowedStrategies = new Set<string>(ALL_STRATEGY_TYPES);
     const allowedTf = new Set(ALL_TIMEFRAMES);
     const nowIso = new Date().toISOString();
@@ -222,7 +217,6 @@ export class SignalsService {
         detectedAt: s.detectedAt && typeof s.detectedAt === 'string' ? s.detectedAt : nowIso,
         lifecycleStatus: s.lifecycleStatus && ['PENDING', 'ACTIVE', 'COMPLETED', 'EXPIRED', 'ARCHIVED'].includes(s.lifecycleStatus) ? s.lifecycleStatus : 'ACTIVE',
         result: s.result && ['WIN', 'LOSS'].includes(s.result) ? s.result : undefined,
-        status: s.status && ['ACTIVE', 'EXPIRED', 'FILLED', 'CLOSED', 'HIT_TP', 'HIT_SL'].includes(s.status) ? s.status : 'ACTIVE',
         metadata: s.metadata && typeof s.metadata === 'object' ? s.metadata : undefined,
         closedAt,
       });
@@ -256,7 +250,6 @@ export class SignalsService {
               detectedAt: new Date(s.detectedAt),
               lifecycleStatus: s.lifecycleStatus as any,
               result: s.result as any,
-              status: s.status,
               closedAt: s.closedAt ? new Date(s.closedAt) : undefined,
               metadata: s.metadata as Prisma.JsonValue | undefined,
               // Legacy SE fields (mapped from metadata if present)
@@ -271,7 +264,6 @@ export class SignalsService {
               bias_level: meta?.bias_level as number | undefined,
               // SE Scanner v2 fields
               ...(isSuperEngulfing ? {
-                state: 'live',
                 type_v2: meta?.type_v2 as string | undefined,
                 pattern_v2: meta?.pattern_v2 as string | undefined,
                 direction_v2: meta?.direction_v2 as string | undefined,
@@ -284,8 +276,6 @@ export class SignalsService {
                 tp1_hit: false,
                 tp2_hit: false,
                 tp3_hit: false,
-                result_v2: null,
-                result_type: null,
                 candle_count: 0,
                 max_candles: meta?.max_candles as number | undefined,
                 triggered_at: now,
@@ -352,7 +342,6 @@ export class SignalsService {
       price: signal.price,
       detectedAt: signal.detectedAt || nowIso,
       lifecycleStatus: signal.lifecycleStatus || 'ACTIVE',
-      status: 'ACTIVE',
       result: undefined,
       metadata: signal.metadata,
     };
@@ -371,7 +360,6 @@ export class SignalsService {
         price: new Prisma.Decimal(signal.price),
         detectedAt: new Date(signal.detectedAt || nowIso),
         lifecycleStatus: (signal.lifecycleStatus || 'ACTIVE') as any,
-        status: 'ACTIVE',
         metadata: signal.metadata as Prisma.JsonValue | undefined,
         bias_direction: (signal.metadata as any)?.bias_direction as string | undefined,
         bias_level: (signal.metadata as any)?.bias_level as number | undefined,
@@ -463,13 +451,12 @@ export class SignalsService {
       if (latest.lifecycleStatus === 'COMPLETED' || latest.lifecycleStatus === 'EXPIRED') {
         await (this.prisma as any).superEngulfingSignal.update({
           where: { id: latest.id },
-          data: { lifecycleStatus: 'ACTIVE', status: 'ACTIVE' },
+          data: { lifecycleStatus: 'ACTIVE' },
         });
         // Update in-memory cache too
         const cached = this.signals.find(s => s.id === latest.id);
         if (cached) {
           cached.lifecycleStatus = 'ACTIVE';
-          cached.status = 'ACTIVE';
         }
       }
 
@@ -520,7 +507,7 @@ export class SignalsService {
           lifecycleStatus: { in: ['PENDING', 'ACTIVE'] },
           detectedAt: { lt: expiryThreshold },
         },
-        data: { lifecycleStatus: 'COMPLETED', status: 'CLOSED', closedAt: now },
+        data: { lifecycleStatus: 'COMPLETED', closedAt: now },
       });
 
       if (currentActiveIds.length > 0) {
@@ -532,7 +519,7 @@ export class SignalsService {
             lifecycleStatus: { in: ['PENDING', 'ACTIVE'] },
             id: { notIn: currentActiveIds },
           },
-          data: { lifecycleStatus: 'COMPLETED', status: 'CLOSED', closedAt: now },
+          data: { lifecycleStatus: 'COMPLETED', closedAt: now },
         });
       }
 
@@ -596,43 +583,39 @@ export class SignalsService {
   }
 
   /**
-   * Update the status and outcome of an existing signal.
+   * Update the lifecycleStatus + result of an existing signal.
    * Called by the Position Tracker when TP/SL/Expiry is hit.
    */
   async updateSignalStatus(update: {
     id: string;
-    status: string;
-    outcome: string;
+    lifecycleStatus: 'COMPLETED' | 'EXPIRED' | 'ACTIVE' | 'PENDING' | 'ARCHIVED';
+    result?: 'WIN' | 'LOSS';
     closedPrice: number;
     closedAt: string;
     pnlPercent: number;
   }) {
     try {
-      // 1. Update DB
       await (this.prisma as any).superEngulfingSignal.update({
         where: { id: update.id },
         data: {
-          status: update.status,
-          outcome: update.outcome,
+          lifecycleStatus: update.lifecycleStatus,
+          result: update.result ?? null,
           closedPrice: new Prisma.Decimal(update.closedPrice),
           closedAt: new Date(update.closedAt),
           pnlPercent: update.pnlPercent,
         },
       });
 
-      // 2. Update in-memory cache
       const cachedSignal = this.signals.find(s => s.id === update.id);
       if (cachedSignal) {
-        cachedSignal.lifecycleStatus = update.status as any; // roughly mapping to new field just to clear TS error
-        // cachedSignal.result = ... left out for now
-        cachedSignal.status = update.status;
-        cachedSignal.outcome = update.outcome;
+        cachedSignal.lifecycleStatus = update.lifecycleStatus;
+        cachedSignal.result = update.result;
         cachedSignal.closedPrice = update.closedPrice;
         cachedSignal.closedAt = update.closedAt;
         cachedSignal.pnlPercent = update.pnlPercent;
       }
 
-      this.logger.log(`Updated signal ${update.id} to ${update.status} (PnL: ${update.pnlPercent}%)`);
+      this.logger.log(`Updated signal ${update.id} to ${update.lifecycleStatus}${update.result ? `/${update.result}` : ''} (PnL: ${update.pnlPercent}%)`);
     } catch (err) {
       this.logger.error(`Failed to update signal ${update.id}: ${err.message}`);
     }
@@ -687,12 +670,10 @@ export class SignalsService {
           detectedAt: r.detectedAt.toISOString(),
           lifecycleStatus: r.lifecycleStatus,
           result: r.result ?? undefined,
-          status: r.status,
           metadata: r.metadata ?? undefined,
           closedAt: r.closedAt ? r.closedAt.toISOString() : undefined,
           closedPrice: r.closedPrice ? Number(r.closedPrice) : undefined,
           pnlPercent: r.pnlPercent ?? undefined,
-          outcome: r.outcome ?? undefined,
           // Legacy SE fields
           direction: r.direction ?? undefined,
           se_entry_zone: r.se_entry_zone ?? undefined,
@@ -709,7 +690,6 @@ export class SignalsService {
           // SE Scanner v2 fields (per new specification)
           // ============================================
           ...(isSuperEngulfing ? {
-            state: r.state ?? undefined,
             type_v2: r.type_v2 ?? undefined,
             pattern_v2: r.pattern_v2 ?? undefined,
             direction_v2: r.direction_v2 ?? undefined,
@@ -722,8 +702,6 @@ export class SignalsService {
             tp1_hit: r.tp1_hit ?? undefined,
             tp2_hit: r.tp2_hit ?? undefined,
             tp3_hit: r.tp3_hit ?? undefined,
-            result_v2: r.result_v2 ?? undefined,
-            result_type: r.result_type ?? undefined,
             close_price: r.close_price ?? undefined,
             candle_count: r.candle_count ?? undefined,
             triggered_at: r.triggered_at ? r.triggered_at.toISOString() : undefined,
@@ -761,12 +739,12 @@ export class SignalsService {
         signalType: row.signalType,
         price: Number(row.price),
         detectedAt: row.detectedAt.toISOString(),
-        status: row.status,
+        lifecycleStatus: row.lifecycleStatus,
+        result: row.result ?? undefined,
         metadata: row.metadata ?? undefined,
         closedAt: row.closedAt ? row.closedAt.toISOString() : undefined,
         closedPrice: row.closedPrice ? Number(row.closedPrice) : undefined,
         pnlPercent: row.pnlPercent ?? undefined,
-        outcome: row.outcome ?? undefined,
       };
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -794,45 +772,21 @@ export class SignalsService {
       const where = strategyType ? { strategyType } : undefined;
       const rows = await (this.prisma as any).superEngulfingSignal.findMany({ where });
 
-      const isSuperEngulfing = strategyType === 'SUPER_ENGULFING';
-
       const total = rows.length;
 
-      // For SE v2, use state field; for others, use legacy status
-      let active: number;
-      let won: number;
-      let lost: number;
-      let expired: number;
-      let live: number;
-      let closedSignals: number;
-      let archived: number;
+      // Unified lifecycle-driven stats across all strategies.
+      // For SE, "expired via candle_expiry" closes as lifecycleStatus=COMPLETED + se_close_reason='EXPIRED',
+      // so we detect that via se_close_reason as well as lifecycleStatus=EXPIRED.
+      const live = rows.filter(r => r.lifecycleStatus === 'PENDING' || r.lifecycleStatus === 'ACTIVE').length;
+      const closedSignals = rows.filter(r => r.lifecycleStatus === 'COMPLETED' || r.lifecycleStatus === 'EXPIRED').length;
+      const archived = rows.filter(r => r.lifecycleStatus === 'ARCHIVED').length;
+      const active = live; // backward-compat alias for callers
+      const won = rows.filter(r => r.result === 'WIN').length;
+      const lost = rows.filter(r => r.result === 'LOSS').length;
+      const expired = rows.filter(r => r.lifecycleStatus === 'EXPIRED' || r.se_close_reason === 'EXPIRED').length;
 
-      if (isSuperEngulfing) {
-        // SE Scanner v2: Use state and result_v2 fields
-        // SPEC: No archive state for SE - only "live" and "closed"
-        live = rows.filter(r => r.state === 'live').length;
-        closedSignals = rows.filter(r => r.state === 'closed').length;
-        archived = 0; // SE v2 has no archive
-
-        active = live; // For backward compat
-        won = rows.filter(r => r.result_v2 === 'won' || r.result === 'WIN').length;
-        lost = rows.filter(r => r.result_v2 === 'lost' || r.result === 'LOSS').length;
-        expired = rows.filter(r => r.result_type === 'candle_expiry').length;
-      } else {
-        // Legacy: Use old lifecycle fields
-        active = rows.filter((r) => r.status === 'ACTIVE').length;
-        won = rows.filter((r) => r.status === 'HIT_TP' || r.outcome === 'HIT_TP' || r.result === 'WIN').length;
-        lost = rows.filter((r) => r.status === 'HIT_SL' || r.outcome === 'HIT_SL' || r.result === 'LOSS').length;
-        expired = rows.filter((r) => r.status === 'EXPIRED' || r.outcome === 'EXPIRED' || r.lifecycleStatus === 'EXPIRED').length;
-
-        live = rows.filter(r => r.lifecycleStatus === 'PENDING' || r.lifecycleStatus === 'ACTIVE' || (!r.lifecycleStatus && r.status === 'ACTIVE')).length;
-        closedSignals = rows.filter(r => r.lifecycleStatus === 'COMPLETED' || r.lifecycleStatus === 'EXPIRED' || (!r.lifecycleStatus && (r.status === 'HIT_TP' || r.status === 'HIT_SL' || r.status === 'EXPIRED' || r.status === 'CLOSED'))).length;
-        archived = rows.filter(r => r.lifecycleStatus === 'ARCHIVED').length;
-      }
-
-      // PNL stats - works for both SE v2 and legacy
-      const winPnls = rows.filter((r) => (r.result_v2 === 'won' || r.outcome === 'HIT_TP' || r.result === 'WIN') && r.pnlPercent != null).map((r) => r.pnlPercent);
-      const lossPnls = rows.filter((r) => (r.result_v2 === 'lost' || r.outcome === 'HIT_SL' || r.result === 'LOSS') && r.pnlPercent != null).map((r) => r.pnlPercent);
+      const winPnls = rows.filter((r) => r.result === 'WIN' && r.pnlPercent != null).map((r) => r.pnlPercent);
+      const lossPnls = rows.filter((r) => r.result === 'LOSS' && r.pnlPercent != null).map((r) => r.pnlPercent);
 
       const closed = won + lost;
       const winRate = closed > 0 ? Math.round((won / closed) * 100) : 0;
@@ -891,8 +845,8 @@ export class SignalsService {
       });
 
       // Calculate win/loss
-      const wins = rows.filter(r => r.result_v2 === 'won' || r.result === 'WIN' || r.outcome === 'HIT_TP').length;
-      const losses = rows.filter(r => r.result_v2 === 'lost' || r.result === 'LOSS' || r.outcome === 'HIT_SL').length;
+      const wins = rows.filter(r => r.result === 'WIN').length;
+      const losses = rows.filter(r => r.result === 'LOSS').length;
       const winRate = (wins + losses) > 0 ? Math.round((wins / (wins + losses)) * 100) : 0;
 
       // Get top signals by PnL

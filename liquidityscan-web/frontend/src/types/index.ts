@@ -25,15 +25,11 @@ export type StrategyType =
   | 'CISD';
 export type SignalType = 'BUY' | 'SELL';
 export type Timeframe = '5m' | '15m' | '1h' | '4h' | '1d' | '1w';
-export type SignalStatus = 'ACTIVE' | 'HIT_TP' | 'HIT_SL' | 'EXPIRED';
 
 export type SignalLifecycleStatus = 'PENDING' | 'ACTIVE' | 'COMPLETED' | 'EXPIRED' | 'ARCHIVED';
 export type SignalResult = 'WIN' | 'LOSS' | null;
 
 // SE Scanner v3 types (3 TP levels)
-export type SeState = 'live' | 'closed';
-export type SeResult = 'won' | 'lost';
-export type SeResultType = 'tp1' | 'tp2' | 'tp3_full' | 'sl' | 'candle_expiry';
 export type SePatternV2 =
   | 'REV_BULLISH'
   | 'REV_BEARISH'
@@ -55,7 +51,6 @@ export interface Signal {
   detectedAt: string;
   lifecycleStatus: SignalLifecycleStatus;
   result?: SignalResult;
-  status: string; // deprecated
   metadata?: {
     [key: string]: unknown; // Allow arbitrary legacy metadata properties
     sePattern?: string;
@@ -73,7 +68,6 @@ export interface Signal {
   closedAt?: string;
   closedPrice?: number;
   pnlPercent?: number;
-  outcome?: string; // deprecated
   // SE Advanced Lifecycle (legacy)
   se_entry_zone?: number;
   se_sl?: number;
@@ -94,7 +88,6 @@ export interface Signal {
   // ============================================
   // SE Scanner v3 fields (3 TP levels)
   // ============================================
-  state?: SeState;
   type_v2?: string;
   pattern_v2?: SePatternV2;
   direction_v2?: SeDirectionV2;
@@ -107,8 +100,6 @@ export interface Signal {
   tp1_hit?: boolean;
   tp2_hit?: boolean;
   tp3_hit?: boolean;
-  result_v2?: SeResult;
-  result_type?: SeResultType;
   close_price?: number;
   candle_count?: number;
   triggered_at?: string;

@@ -24,7 +24,6 @@ export async function saveScannerSignal(
         price,
         detectedAt: new Date(detectedAt).toISOString(),
         lifecycleStatus: 'PENDING',
-        status: 'PENDING',
         metadata,
     };
 

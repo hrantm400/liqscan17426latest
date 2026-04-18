@@ -208,7 +208,6 @@ describe('RSI Divergence lifecycle', () => {
                     },
                     data: expect.objectContaining({
                         lifecycleStatus: 'COMPLETED',
-                        status: 'CLOSED',
                     }),
                 }),
             );
