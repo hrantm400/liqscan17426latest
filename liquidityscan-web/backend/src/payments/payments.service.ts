@@ -286,18 +286,37 @@ export class PaymentsService {
             include: { affiliate: true },
           });
           if (referral && referral.affiliate) {
-            const RATES: Record<string, number> = { STANDARD: 0.30, ELITE: 0.40, AGENCY: 0.20 };
-            const rate = RATES[referral.affiliate.tier] || 0.30;
-            const commission = payAmount * rate;
-            await tx.affiliateReferral.update({
-              where: { id: referral.id },
-              data: { paymentAmount: payAmount, commission, status: 'CONVERTED' },
-            });
-            await tx.affiliate.update({
-              where: { id: referral.affiliateId },
-              data: { totalSales: { increment: 1 }, totalEarned: { increment: commission } },
-            });
-            this.logger.log(`Affiliate commission: $${commission.toFixed(2)} to ${referral.affiliate.code}`);
+            const priorStatus = referral.status;
+            if (priorStatus === 'CONVERTED') {
+              // Outer idempotency guard should prevent this, but defend here too:
+              // double-credit silently would be a money bug.
+              this.logger.warn(
+                `[AFFILIATE_DOUBLE_CREDIT_AVERTED] referralId=${referral.id} paymentId=${paymentId}: ` +
+                  `already CONVERTED, skipping credit.`,
+              );
+            } else {
+              const RATES: Record<string, number> = { STANDARD: 0.30, ELITE: 0.40, AGENCY: 0.20 };
+              const rate = RATES[referral.affiliate.tier] || 0.30;
+              const commission = payAmount * rate;
+              await tx.affiliateReferral.update({
+                where: { id: referral.id },
+                data: { paymentAmount: payAmount, commission, status: 'CONVERTED' },
+              });
+              await tx.affiliate.update({
+                where: { id: referral.affiliateId },
+                data: { totalSales: { increment: 1 }, totalEarned: { increment: commission } },
+              });
+              if (priorStatus === 'CHURNED') {
+                this.logger.log(
+                  `[AFFILIATE_RESURRECTION] commission +$${commission.toFixed(2)} to ${referral.affiliate.code} ` +
+                    `(paymentId=${paymentId}, referralId=${referral.id}, prior=CHURNED)`,
+                );
+              } else {
+                this.logger.log(
+                  `Affiliate commission: $${commission.toFixed(2)} to ${referral.affiliate.code}`,
+                );
+              }
+            }
           }
         } catch (affiliateError) {
           const msg = affiliateError instanceof Error ? affiliateError.message : String(affiliateError);

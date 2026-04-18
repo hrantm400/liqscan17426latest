@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { Prisma, UserTier } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -8,6 +8,8 @@ import { AppConfigService } from '../app-config/app-config.service';
 
 @Injectable()
 export class AdminService {
+  private readonly logger = new Logger(AdminService.name);
+
   constructor(
     private prisma: PrismaService,
     private paymentsService: PaymentsService,
@@ -431,14 +433,126 @@ export class AdminService {
     return this.paymentsService.processSubscriptionPayment(paymentId);
   }
 
-  async cancelPayment(paymentId: string) {
+  async cancelPendingPayment(paymentId: string) {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment) throw new NotFoundException('Payment not found');
-    if (payment.status === 'completed') throw new BadRequestException('Completed payment cannot be cancelled');
+    if (payment.status === 'completed') {
+      throw new BadRequestException(
+        'Completed payment cannot be cancelled — use refund endpoint instead',
+      );
+    }
+    if (payment.status === 'cancelled') {
+      return { success: true, alreadyCancelled: true };
+    }
     await this.prisma.payment.update({
       where: { id: paymentId },
       data: { status: 'cancelled' },
     });
+    return { success: true };
+  }
+
+  async refundCompletedPayment(paymentId: string) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      include: { user: true },
+    });
+    if (!payment) throw new NotFoundException('Payment not found');
+    if (payment.status === 'refunded') {
+      return { success: true, alreadyRefunded: true };
+    }
+    if (payment.status !== 'completed') {
+      throw new BadRequestException(
+        `Only completed payments can be refunded (current: ${payment.status})`,
+      );
+    }
+
+    const now = new Date();
+
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.payment.update({
+          where: { id: paymentId },
+          data: { status: 'refunded' },
+        });
+
+        await tx.user.update({
+          where: { id: payment.userId },
+          data: {
+            tier: 'FREE',
+            subscriptionStatus: 'cancelled',
+            subscriptionExpiresAt: now,
+            subscriptionId: null,
+          },
+        });
+
+        const userSub = await tx.userSubscription.findFirst({
+          where: { paymentId, status: 'active' },
+        });
+        if (userSub) {
+          await tx.userSubscription.update({
+            where: { id: userSub.id },
+            data: { status: 'cancelled', endDate: now },
+          });
+        }
+
+        try {
+          const referral = await tx.affiliateReferral.findUnique({
+            where: { referredUserId: payment.userId },
+            include: { affiliate: true },
+          });
+          if (referral?.status === 'CONVERTED' && referral.affiliate) {
+            const commission = referral.commission || 0;
+            const affiliate = referral.affiliate;
+
+            const clampedTotalSales = Math.max(0, affiliate.totalSales - 1);
+            const clampedTotalEarned = Math.max(0, (affiliate.totalEarned || 0) - commission);
+
+            if (affiliate.totalSales === 0 || (affiliate.totalEarned || 0) < commission) {
+              this.logger.warn(
+                `[AFFILIATE_REVERSAL_UNDERFLOW] affiliateId=${affiliate.id} ` +
+                  `paymentId=${paymentId}: expected to decrement below 0, clamped to 0. ` +
+                  `Indicates a prior commission bookkeeping bug.`,
+              );
+            }
+
+            await tx.affiliate.update({
+              where: { id: affiliate.id },
+              data: { totalSales: clampedTotalSales, totalEarned: clampedTotalEarned },
+            });
+            await tx.affiliateReferral.update({
+              where: { id: referral.id },
+              // CHURNED is shared state: reached by (a) natural churn on subscription
+              // expiry, (b) refund-triggered reversal. To distinguish, check the
+              // associated payment.status='refunded' or grep logs for
+              // [AFFILIATE_REVERSAL]. A future PR may add a dedicated reversedAt
+              // column (see TD-8 in PHASE3_TECH_DEBT.md).
+              data: { status: 'CHURNED' },
+            });
+            this.logger.log(
+              `[AFFILIATE_REVERSAL] commission -$${commission.toFixed(2)} from ${affiliate.code} ` +
+                `(paymentId=${paymentId}, referralId=${referral.id})`,
+            );
+          }
+        } catch (affiliateError) {
+          const msg =
+            affiliateError instanceof Error ? affiliateError.message : String(affiliateError);
+          this.logger.error(
+            `[AFFILIATE_REVERSAL_FAILED] paymentId=${paymentId} userId=${payment.userId}: ${msg}`,
+            affiliateError instanceof Error ? affiliateError.stack : undefined,
+          );
+        }
+      },
+      {
+        maxWait: 5000,
+        timeout: 15000,
+        isolationLevel: Prisma.TransactionIsolationLevel.ReadCommitted,
+      },
+    );
+
+    this.logger.log(
+      `Payment refunded: ${paymentId} user=${payment.userId} amount=$${payment.amount}`,
+    );
+
     return { success: true };
   }
 

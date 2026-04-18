@@ -156,7 +156,12 @@ export class AdminController {
 
   @Put('payments/:id/cancel')
   async cancelPayment(@Param('id') id: string) {
-    return this.adminService.cancelPayment(id);
+    return this.adminService.cancelPendingPayment(id);
+  }
+
+  @Put('payments/:id/refund')
+  async refundPayment(@Param('id') id: string) {
+    return this.adminService.refundCompletedPayment(id);
   }
 
   @Get('email-logs')

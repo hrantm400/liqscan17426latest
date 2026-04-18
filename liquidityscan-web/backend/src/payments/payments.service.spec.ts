@@ -247,4 +247,48 @@ describe('PaymentsService.processSubscriptionPayment', () => {
       NotFoundException,
     );
   });
+
+  it('CHURNED referral resurrects to CONVERTED on re-payment, increments affiliate totals, logs [AFFILIATE_RESURRECTION]', async () => {
+    const { prisma, tx } = makePrismaMock();
+    prisma.payment.findUnique.mockResolvedValue(pendingPayment);
+    prisma.subscription.findUnique.mockResolvedValue(subscriptionRow);
+
+    tx.affiliateReferral.findUnique.mockResolvedValue({
+      id: 'ref_churned_1',
+      affiliateId: 'aff_1',
+      referredUserId: USER_ID,
+      paymentAmount: 49,
+      commission: 14.7,
+      status: 'CHURNED',
+      affiliate: { id: 'aff_1', code: 'RESURRECT25A', tier: 'STANDARD' },
+    });
+
+    const mail = makeMailMock();
+    const svc = new PaymentsService(prisma as any, mail as any);
+    const logLog = jest.spyOn((svc as any).logger, 'log').mockImplementation(() => undefined);
+
+    await svc.processSubscriptionPayment(PAYMENT_ID);
+
+    expect(tx.affiliateReferral.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'ref_churned_1' },
+        data: expect.objectContaining({ status: 'CONVERTED' }),
+      }),
+    );
+    expect(tx.affiliate.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'aff_1' },
+        data: expect.objectContaining({
+          totalSales: { increment: 1 },
+          totalEarned: { increment: expect.any(Number) },
+        }),
+      }),
+    );
+
+    const loggedArgs = logLog.mock.calls.flat().map((a) => String(a));
+    expect(loggedArgs.some((s) => s.includes('[AFFILIATE_RESURRECTION]'))).toBe(true);
+    expect(loggedArgs.some((s) => s.includes('prior=CHURNED'))).toBe(true);
+
+    logLog.mockRestore();
+  });
 });

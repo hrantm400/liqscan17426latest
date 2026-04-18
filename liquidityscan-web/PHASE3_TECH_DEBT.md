@@ -80,3 +80,61 @@ These are **deferred**, not blocking, and must not be started without explicit a
 - **Blocker:** Better to land *after* TD-4 (strict flags), because strict
   flags surface issues ESLint also catches — avoids churn fixing the same
   errors twice.
+
+### TD-6 — Admin UI "Refund" button for completed payments
+- **Source:** PR 2.5 Part A follow-up.
+- **Context:** The backend now exposes `PUT /admin/payments/:id/refund` →
+  `AdminService.refundCompletedPayment()` (atomic rollback of payment, user
+  tier, UserSubscription and affiliate commission). The admin frontend at
+  `/admin/payments` currently only surfaces a "Cancel" action, which after
+  PR 2.5a calls the renamed `cancelPendingPayment` path and is rejected for
+  `status='completed'` payments.
+- **Action (proposed):**
+  1. Add a "Refund" button in `frontend/src/pages/admin/Payments.tsx` visible
+     only when `payment.status === 'completed'`.
+  2. Wire it to the new `PUT /admin/payments/:id/refund` endpoint.
+  3. Show the resulting `alreadyRefunded` flag distinctly from a fresh refund
+     (UX: "already refunded" toast vs "refund successful" toast).
+  4. Disable the button for `status in ('refunded', 'cancelled', 'failed',
+     'pending')`; keep existing "Cancel" visible only for pending/failed.
+- **Blocker:** None. Low-risk UI PR, can be scheduled independently.
+
+### TD-7 — Telegram 409 conflict handling (PR 2.5 Part B)
+- **Source:** PR 2.5 Part A follow-up (deferred scope from original PR 2.5).
+- **Context:** Two concurrent `TelegramBot` polling loops (bot token reused
+  between stale pm2 restart and new instance, or dev + prod pointing at the
+  same bot) produce recurring `409 Conflict: terminated by other getUpdates
+  request` in logs, noising `/root/.pm2/logs/liquidityscan-api-error.log`
+  without actually breaking bot delivery.
+- **Action (proposed):**
+  1. Detect the 409 in the polling error handler (`telegram.service.ts`
+     `onPollingError`), classify it, suppress the noisy log-and-retry storm
+     after the first N occurrences (exponential backoff with a cap).
+  2. Consider using a distributed lock (Redis SETNX with TTL, or a DB advisory
+     lock) so only one API instance runs `bot.startPolling()` at a time;
+     others become pure webhook consumers.
+  3. Add a unit/integration test that fakes two polling instances and asserts
+     only one emits `getUpdates`.
+- **Blocker:** Requires decision on Redis availability for the deployment.
+  If Redis is not available, DB advisory lock (`pg_try_advisory_lock`) is a
+  zero-new-infra alternative.
+
+### TD-8 — Optional `AffiliateReferral.reversedAt` column
+- **Source:** PR 2.5 Part A follow-up.
+- **Context:** `AffiliateReferral.status = 'CHURNED'` is now a shared terminal
+  state reached by either (a) natural subscription-expiry churn or (b) an
+  explicit admin-triggered refund reversal. The two cases are currently only
+  distinguishable by cross-referencing `Payment.status='refunded'` on the
+  associated payment, or by grepping logs for `[AFFILIATE_REVERSAL]` /
+  `[AFFILIATE_REVERSAL_UNDERFLOW]` tags.
+- **Action (proposed):**
+  1. Add an optional `reversedAt DateTime?` column to `AffiliateReferral`.
+  2. Populate it in `AdminService.refundCompletedPayment()` when transitioning
+     CONVERTED → CHURNED via refund.
+  3. Leave it null for natural churn transitions (e.g. future subscription-
+     expiry sweep). Makes audit queries 1-hop instead of requiring join on
+     Payment.
+  4. Surface it in the admin UI alongside the referral row if an affiliate
+     dashboard is ever added.
+- **Blocker:** None. Low-risk schema additive migration, can land as part of
+  a broader affiliate observability PR.
