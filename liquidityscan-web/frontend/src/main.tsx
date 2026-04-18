@@ -3,8 +3,14 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { initMicrosoftClarity } from './lib/clarity'
+import { initSentry } from './lib/sentry'
 import { bootstrapAuth } from './services/userApi'
 import { useAuthStore } from './store/authStore'
+
+// PR 3.2 — initialize Sentry before anything else so captureException
+// calls from ErrorBoundary / route loaders are captured. No-op when
+// VITE_SENTRY_DSN is unset.
+initSentry()
 
 if (import.meta.env.PROD) {
   initMicrosoftClarity()

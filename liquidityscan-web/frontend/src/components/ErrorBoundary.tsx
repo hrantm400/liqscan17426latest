@@ -1,4 +1,5 @@
 import { Component, ErrorInfo, ReactNode } from 'react';
+import { Sentry } from '../lib/sentry';
 
 interface Props {
   children: ReactNode;
@@ -22,6 +23,13 @@ export class ErrorBoundary extends Component<Props, State> {
     console.error('Uncaught error:', error, errorInfo);
     console.error('Error stack:', error.stack);
     console.error('Component stack:', errorInfo.componentStack);
+    // PR 3.2 — forward to Sentry with React-specific context. No-op
+    // when DSN is unset (see initSentry).
+    Sentry.captureException(error, {
+      contexts: {
+        react: { componentStack: errorInfo.componentStack ?? 'unknown' },
+      },
+    });
   }
 
   public render() {

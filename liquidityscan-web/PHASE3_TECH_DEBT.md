@@ -188,6 +188,27 @@ These are **deferred**, not blocking, and must not be started without explicit a
 - **Blocker:** minimum 72 hours post-PR-3.1 stability.
 - **Estimated effort:** 10 minutes.
 
+### TD-11 — Enable `@sentry/profiling-node` when APM is needed
+- **Source:** PR 3.2 scope decision.
+- **Context:** PR 3.2 deliberately skipped `@sentry/profiling-node`
+  (and `tracesSampleRate > 0`) because performance monitoring was
+  declared out-of-scope for the initial observability layer. Dropping
+  the package from `backend/package.json` avoids shipping a dead
+  transitive dep into `node_modules` on every deploy.
+- **Action when APM is actually needed:**
+  1. `npm i @sentry/profiling-node` in `liquidityscan-web/backend`.
+  2. In `backend/src/common/sentry.config.ts`, `import { ProfilingIntegration } from '@sentry/profiling-node'`
+     and add it to `Sentry.init({ integrations: [...] })`.
+  3. Set `tracesSampleRate` to something low (0.05 ≈ 5% of requests)
+     to keep Sentry quota and p99 overhead in check.
+  4. Add a `SENTRY_TRACES_SAMPLE_RATE` env var to `.env.example`.
+  5. Smoke-test with `POST /api/debug/throw-sentry` and confirm a
+     performance transaction appears alongside the error event in
+     the Sentry UI.
+- **Blocker:** real operational need (e.g., latency regression that
+  the existing JSON logs can't localize).
+- **Estimated effort:** 2 hours.
+
 ---
 
 ## Findings — PR 3.1 retrospective

@@ -1,7 +1,15 @@
+// PR 3.2: side-effect import — Sentry.init MUST run before any @nestjs/*
+// or http module loads so auto-instrumentation can monkey-patch them.
+// Do NOT reorder. Do NOT convert to a named import. Sentry is dormant
+// when SENTRY_DSN is unset.
+import './common/sentry.config';
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import helmet from 'helmet';
+import { Logger as PinoLogger } from 'nestjs-pino';
 import { AppModule } from './app.module';
+import { AllExceptionsFilter } from './common/all-exceptions.filter';
 // cookie-parser is CJS with `export = cookieParser;` in its d.ts, so the
 // TS default-import compiles to `cookie_parser_1.default(...)` which is not
 // a function. Use `require` style to get the callable directly.
@@ -9,7 +17,10 @@ import { AppModule } from './app.module';
 const cookieParser = require('cookie-parser') as () => (req: any, res: any, next: any) => void;
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+
+  app.useLogger(app.get(PinoLogger));
+  app.useGlobalFilters(new AllExceptionsFilter());
 
   app.use(cookieParser());
 
@@ -59,7 +70,10 @@ async function bootstrap() {
   const port = Number(process.env.PORT) || 3000;
   const host = process.env.LISTEN_HOST ?? '127.0.0.1';
   await app.listen(port, host);
-  console.log(`🚀 Application is running on: http://${host}:${port}/api`);
+  app.get(PinoLogger).log(
+    { host, port, env: process.env.NODE_ENV },
+    'Application bootstrap complete',
+  );
 }
 
 bootstrap();

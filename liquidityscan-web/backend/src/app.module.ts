@@ -4,6 +4,9 @@ import { JwtAuthGuard } from './auth/guards/jwt-auth.guard';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { LoggerModule } from 'nestjs-pino';
+import { pinoParams } from './common/logger.config';
+import { DebugController } from './common/debug.controller';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { PrismaModule } from './prisma/prisma.module';
@@ -29,6 +32,7 @@ import { AppConfigModule } from './app-config/app-config.module';
       isGlobal: true,
       envFilePath: '.env',
     }),
+    LoggerModule.forRoot(pinoParams),
     ThrottlerModule.forRoot([
       {
         ttl: 60000,
@@ -53,7 +57,7 @@ import { AppConfigModule } from './app-config/app-config.module';
     MailModule,
     AppConfigModule,
   ],
-  controllers: [AppController],
+  controllers: [AppController, DebugController],
   providers: [
     AppService,
     {
