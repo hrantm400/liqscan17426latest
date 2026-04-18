@@ -317,8 +317,20 @@ export class AuthService {
     return user;
   }
 
+  /**
+   * Idempotently revoke a refresh token row. Used by POST /auth/logout.
+   * Missing-row is not an error (logout is re-entrant).
+   */
+  async revokeRefreshToken(refreshToken: string | undefined | null): Promise<void> {
+    if (!refreshToken) return;
+    try {
+      await this.prisma.refreshToken.delete({ where: { token: refreshToken } });
+    } catch {
+      // Row not found — treat as already-revoked.
+    }
+  }
+
   async refreshToken(refreshToken: string) {
-    // Find refresh token
     const token = await this.prisma.refreshToken.findUnique({
       where: { token: refreshToken },
       include: { user: true },
@@ -328,15 +340,15 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    // Generate new tokens
-    const tokens = await this.generateTokens(token.userId, token.user.email);
-
-    // Delete old refresh token
+    // PR 3.1: delete the old row BEFORE issuing a new token.
+    // JWT iat has 1-second resolution, so a register-then-refresh within the
+    // same second produces a byte-identical JWT — if we delete after create
+    // it collides on the unique(token) constraint.
     await this.prisma.refreshToken.delete({
       where: { id: token.id },
     });
 
-    return tokens;
+    return this.generateTokens(token.userId, token.user.email);
   }
 
   private async generateTokens(userId: string, email: string) {

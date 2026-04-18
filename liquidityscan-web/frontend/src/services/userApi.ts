@@ -16,25 +16,59 @@ export const getApiBaseUrl = () => {
   return 'http://localhost:3002/api';
 };
 
-type AuthStorageState = {
-  state?: {
-    token?: string | null;
-    refreshToken?: string | null;
-  };
-};
+/**
+ * PR 3.1 — In-memory access token.
+ *
+ * Access token lives ONLY in this module's closure. It is not in localStorage,
+ * not in sessionStorage, not in Zustand persist. It is rebuilt on every page
+ * load via `bootstrapAuth()`, which hits POST /auth/refresh — the refresh
+ * token is an httpOnly `rt` cookie the browser attaches automatically.
+ */
+let inMemoryAccessToken: string | null = null;
 
-/** Same token source as ApiClient — for plain `fetch` calls that need JWT (e.g. POST /signals/ict-bias). */
+export function setInMemoryAccessToken(token: string | null): void {
+  inMemoryAccessToken = token;
+}
+
+export function getInMemoryAccessToken(): string | null {
+  return inMemoryAccessToken;
+}
+
+/**
+ * Legacy alias kept so `signalsApi.ts` / `candles.ts` callers don't need to
+ * change. Always reads the in-memory token now.
+ */
 export function getStoredAccessToken(): string | null {
+  return inMemoryAccessToken;
+}
+
+export function apiBaseUrl(): string {
+  return API_BASE_URL;
+}
+
+/**
+ * Silent refresh on app boot. Call before first protected render.
+ * Resolves to true if the cookie produced a fresh access token; false if
+ * there is no valid session (caller should redirect to /login).
+ */
+export async function bootstrapAuth(): Promise<boolean> {
   try {
-    const authStorage = localStorage.getItem('auth-storage');
-    if (authStorage) {
-      const parsed: AuthStorageState = JSON.parse(authStorage);
-      if (parsed?.state?.token) return parsed.state.token as string;
-    }
+    const resp = await fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json' },
+      // Empty body — backend reads cookie. Content-Type header is required
+      // so Nest's JSON body parser doesn't treat the body as malformed.
+      body: '{}',
+    });
+    if (!resp.ok) return false;
+    const data = await resp.json();
+    if (!data?.accessToken) return false;
+    inMemoryAccessToken = data.accessToken;
+    return true;
   } catch {
-    /* ignore */
+    return false;
   }
-  return localStorage.getItem('token');
 }
 
 const API_BASE_URL = getApiBaseUrl();
@@ -42,76 +76,30 @@ const API_BASE_URL = getApiBaseUrl();
 class ApiClient {
   private baseUrl: string;
   private getToken: () => string | null;
-  private getRefreshToken: () => string | null;
-  private refreshInFlight: Promise<{ accessToken: string; refreshToken: string } | null> | null = null;
+  private refreshInFlight: Promise<{ accessToken: string } | null> | null = null;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
-    this.getToken = () => {
-      // Try to get token from Zustand store (auth-storage)
-      try {
-        const authStorage = localStorage.getItem('auth-storage');
-        if (authStorage) {
-          const parsed: AuthStorageState = JSON.parse(authStorage);
-          if (parsed?.state?.token) {
-            return parsed.state.token as string;
-          }
-        }
-      } catch (e) {
-        // Fallback to old method
-      }
-      // Fallback to direct localStorage
-      return localStorage.getItem('token');
-    };
-
-    this.getRefreshToken = () => {
-      try {
-        const authStorage = localStorage.getItem('auth-storage');
-        if (authStorage) {
-          const parsed: AuthStorageState = JSON.parse(authStorage);
-          if (parsed?.state?.refreshToken) {
-            return parsed.state.refreshToken as string;
-          }
-        }
-      } catch (e) {
-        // ignore
-      }
-      return null;
-    };
+    this.getToken = () => inMemoryAccessToken;
   }
 
-  private updateStoredTokens(accessToken: string, refreshToken: string) {
-    try {
-      const raw = localStorage.getItem('auth-storage');
-      const parsed: any = raw ? JSON.parse(raw) : {};
-      parsed.state = parsed.state || {};
-      parsed.state.token = accessToken;
-      parsed.state.refreshToken = refreshToken;
-      localStorage.setItem('auth-storage', JSON.stringify(parsed));
-    } catch (e) {
-      // ignore, still set legacy token below
-    }
-    localStorage.setItem('token', accessToken);
-  }
-
-  private async refreshAccessToken(): Promise<{ accessToken: string; refreshToken: string } | null> {
+  private async refreshAccessToken(): Promise<{ accessToken: string } | null> {
     if (this.refreshInFlight) return this.refreshInFlight;
-    const refreshToken = this.getRefreshToken();
-    if (!refreshToken) return null;
 
     this.refreshInFlight = (async () => {
       try {
         const resp = await fetch(`${this.baseUrl}/auth/refresh`, {
           method: 'POST',
+          credentials: 'include',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ refreshToken }),
+          body: '{}',
         });
         if (!resp.ok) return null;
         const data = await resp.json();
-        if (!data?.accessToken || !data?.refreshToken) return null;
-        this.updateStoredTokens(data.accessToken, data.refreshToken);
-        return { accessToken: data.accessToken, refreshToken: data.refreshToken };
-      } catch (e) {
+        if (!data?.accessToken) return null;
+        inMemoryAccessToken = data.accessToken;
+        return { accessToken: data.accessToken };
+      } catch {
         return null;
       } finally {
         this.refreshInFlight = null;
@@ -137,6 +125,7 @@ class ApiClient {
 
     const response = await fetch(`${this.baseUrl}${endpoint}`, {
       ...options,
+      credentials: 'include',
       headers,
     });
 
@@ -151,10 +140,9 @@ class ApiClient {
         try {
           // Lazy import to avoid circular deps in module init
           const mod = await import('../store/authStore');
-          mod.useAuthStore.getState().logout();
-        } catch (e) {
-          localStorage.removeItem('auth-storage');
-          localStorage.removeItem('token');
+          await mod.useAuthStore.getState().logout();
+        } catch {
+          inMemoryAccessToken = null;
         }
         const err = new Error('Session expired — please log in again.');
         (err as any).name = 'AuthExpiredError';
@@ -235,10 +223,16 @@ class ApiClient {
     });
   }
 
-  async refreshToken(refreshToken: string) {
+  /**
+   * PR 3.1: refresh token is read from the httpOnly `rt` cookie by the
+   * backend. The `refreshToken` param is ignored — retained only so existing
+   * call sites (Login/Register flows that still pass it) keep compiling until
+   * they are updated in this PR. Callers should prefer `bootstrapAuth()`.
+   */
+  async refreshToken(_refreshToken?: string) {
     return this.request<{ accessToken: string; refreshToken: string }>('/auth/refresh', {
       method: 'POST',
-      body: JSON.stringify({ refreshToken }),
+      body: '{}',
     });
   }
 

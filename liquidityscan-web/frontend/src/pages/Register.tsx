@@ -29,39 +29,15 @@ export function Register() {
     }
   }, [user, token, navigate]);
 
-  // Handle Google OAuth callback
+  // Handle OAuth error surfaced by backend redirect.
+  // PR 3.1 — dropped legacy `?token=` / `?refreshToken=` URL-param fallback:
+  // backend has used one-time `?code=` exchange since 2024 (see OAuthHandler).
   useEffect(() => {
-    const token = searchParams.get('token');
-    const refreshToken = searchParams.get('refreshToken');
     const errorParam = searchParams.get('error');
-    
     if (errorParam) {
       setError('Google authentication failed');
-      return;
     }
-
-    if (token && refreshToken) {
-      // Store tokens
-      setToken(token);
-      setRefreshToken(refreshToken);
-      
-      // Decode JWT to get user info
-      try {
-        const payload = JSON.parse(atob(token.split('.')[1]));
-        setUser({
-          id: payload.sub,
-          email: payload.email,
-          name: payload.email?.split('@')[0] || 'User',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-      } catch (e) {
-        // If decode fails, user will be fetched on next API call
-      }
-      
-      navigate('/dashboard');
-    }
-  }, [searchParams, navigate, setToken, setRefreshToken]);
+  }, [searchParams]);
 
   useEffect(() => {
     const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined;

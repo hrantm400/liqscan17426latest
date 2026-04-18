@@ -1,7 +1,16 @@
-import { Controller, Post, Get, Body, UseGuards, Req, Res, Query } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  HttpCode,
+  Body,
+  UseGuards,
+  Req,
+  Res,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
-import { AuthGuard } from '@nestjs/passport';
-import { Request, Response } from 'express';
+import { Request, Response, CookieOptions } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
@@ -9,40 +18,108 @@ import { OAuthExchangeDto } from './dto/oauth-exchange.dto';
 import { GoogleOauthGuard } from './guards/google-oauth.guard';
 import { Public } from './decorators/public.decorator';
 
+/**
+ * PR 3.1: refresh token lives in an httpOnly cookie named `rt`.
+ * Dual-support Phase 1: backend still accepts `@Body('refreshToken')` as a
+ * fallback so legacy clients with cached JS (localStorage-based) keep
+ * working until their next hard reload. Body path will be removed in PR 3.1b.
+ */
+const REFRESH_COOKIE_NAME = 'rt';
+const REFRESH_COOKIE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30d, matches JWT_REFRESH_EXPIRES_IN default
+
+function refreshCookieOptions(): CookieOptions {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/api/auth',
+    maxAge: REFRESH_COOKIE_MAX_AGE_MS,
+  };
+}
+
 @Controller('auth')
 export class AuthController {
   constructor(private authService: AuthService) {}
+
+  private setRefreshCookie(res: Response, refreshToken: string) {
+    res.cookie(REFRESH_COOKIE_NAME, refreshToken, refreshCookieOptions());
+  }
+
+  private clearRefreshCookie(res: Response) {
+    const opts = refreshCookieOptions();
+    // Browsers require matching attrs to clear — reuse opts + maxAge: 0.
+    res.clearCookie(REFRESH_COOKIE_NAME, { ...opts, maxAge: 0 });
+  }
+
+  private extractRefreshToken(req: Request, bodyToken: string | undefined): string | undefined {
+    const cookieToken = (req as Request & { cookies?: Record<string, string> }).cookies?.[REFRESH_COOKIE_NAME];
+    return cookieToken || bodyToken || undefined;
+  }
 
   @Post('register')
   @Public()
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 10, ttl: 60000 } })
-  async register(@Body() dto: RegisterDto) {
-    return this.authService.register(dto);
+  async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.register(dto);
+    this.setRefreshCookie(res, result.refreshToken);
+    return result;
   }
 
   @Post('login')
   @Public()
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 15, ttl: 60000 } })
-  async login(@Body() dto: LoginDto) {
-    return this.authService.login(dto);
+  async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.login(dto);
+    this.setRefreshCookie(res, result.refreshToken);
+    return result;
   }
 
   @Post('refresh')
   @Public()
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 30, ttl: 60000 } })
-  async refresh(@Body('refreshToken') refreshToken: string) {
-    return this.authService.refreshToken(refreshToken);
+  async refresh(
+    @Req() req: Request,
+    @Body('refreshToken') bodyToken: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = this.extractRefreshToken(req, bodyToken);
+    if (!token) {
+      throw new UnauthorizedException('Missing refresh token');
+    }
+    const result = await this.authService.refreshToken(token);
+    this.setRefreshCookie(res, result.refreshToken);
+    return result;
+  }
+
+  @Post('logout')
+  @Public()
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @HttpCode(204)
+  async logout(
+    @Req() req: Request,
+    @Body('refreshToken') bodyToken: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const token = this.extractRefreshToken(req, bodyToken);
+    await this.authService.revokeRefreshToken(token);
+    this.clearRefreshCookie(res);
   }
 
   @Post('google/one-tap')
   @Public()
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 20, ttl: 60000 } })
-  async googleOneTap(@Body('credential') credential: string) {
-    return this.authService.googleOneTapLogin(credential);
+  async googleOneTap(
+    @Body('credential') credential: string,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.authService.googleOneTapLogin(credential);
+    this.setRefreshCookie(res, result.refreshToken);
+    return result;
   }
 
   /** Exchange one-time code from Google redirect for access + refresh tokens (no secrets in URL). */
@@ -50,8 +127,10 @@ export class AuthController {
   @Public()
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 25, ttl: 60000 } })
-  async oauthExchange(@Body() dto: OAuthExchangeDto) {
-    return this.authService.exchangeOAuthCode(dto.code);
+  async oauthExchange(@Body() dto: OAuthExchangeDto, @Res({ passthrough: true }) res: Response) {
+    const result = await this.authService.exchangeOAuthCode(dto.code);
+    this.setRefreshCookie(res, result.refreshToken);
+    return result;
   }
 
   @Get('google')

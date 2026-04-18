@@ -4,25 +4,36 @@ import { useAuthStore } from '../store/authStore';
 import { authApi } from '../services/userApi';
 
 /**
- * OAuth callback: prefers one-time `code` (exchanged via POST /auth/oauth/exchange),
- * falls back to legacy `token` + `refreshToken` query params.
+ * OAuth callback handler.
+ *
+ * Since the 2024 exchange-code migration the backend redirects to
+ * `/oauth-callback?code=<one-time>` (5-min TTL, single use). The frontend
+ * exchanges it via POST /auth/oauth/exchange and receives tokens in the
+ * response body. After PR 3.1 the refresh token is also placed in an
+ * httpOnly `rt` cookie by the backend — we still store the access token
+ * in Zustand via setToken so the axios-style client can use it.
+ *
+ * The legacy `?token=` / `?refreshToken=` URL-param fallback and the
+ * `sessionStorage.oauth_token` bridge were removed in PR 3.1: the server
+ * has not emitted those parameters for over a year. If a client is found
+ * relying on the old flow, investigate the source — it's almost certainly
+ * a spoofed URL.
  */
 export function OAuthHandler() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { setUser, setToken, setRefreshToken } = useAuthStore();
+  const { setUser, setToken } = useAuthStore();
 
   const isProcessingRef = useRef(false);
-  const processedKeyRef = useRef<string | null>(null);
+  const processedCodeRef = useRef<string | null>(null);
 
-  const finalizeWithTokens = async (urlToken: string, urlRefreshToken: string, userFromApi?: unknown) => {
+  const finalizeWithTokens = async (accessToken: string, userFromApi?: unknown) => {
     if (isProcessingRef.current) return;
     isProcessingRef.current = true;
 
     try {
-      setToken(urlToken);
-      setRefreshToken(urlRefreshToken);
+      setToken(accessToken);
 
       if (userFromApi && typeof userFromApi === 'object') {
         setUser(userFromApi as Parameters<typeof setUser>[0]);
@@ -31,25 +42,11 @@ export function OAuthHandler() {
           const profile = await authApi.getProfile();
           setUser(profile);
         } catch (error) {
-          console.error('[OAuthHandler] Failed to fetch profile, using token payload:', error);
-          try {
-            const payload = JSON.parse(atob(urlToken.split('.')[1]));
-            setUser({
-              id: payload.sub || '',
-              email: payload.email || '',
-              name: payload.email?.split('@')[0] || 'User',
-              isAdmin: payload.isAdmin || false,
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            });
-          } catch (e) {
-            console.error('[OAuthHandler] Failed to decode token:', e);
-          }
+          console.error('[OAuthHandler] Failed to fetch profile after exchange:', error);
+          navigate('/login?error=profile_fetch_failed', { replace: true });
+          return;
         }
       }
-
-      sessionStorage.removeItem('oauth_token');
-      sessionStorage.removeItem('oauth_refreshToken');
 
       const currentPath = window.location.pathname;
       if (currentPath !== '/dashboard' && !currentPath.startsWith('/dashboard')) {
@@ -76,50 +73,19 @@ export function OAuthHandler() {
     const code =
       searchParams.get('code') || new URLSearchParams(window.location.search).get('code');
 
-    if (code) {
-      if (processedKeyRef.current === `code:${code}`) return;
-      processedKeyRef.current = `code:${code}`;
+    if (!code) return;
+    if (processedCodeRef.current === code) return;
+    processedCodeRef.current = code;
 
-      authApi
-        .oauthExchangeCode(code)
-        .then((res) => finalizeWithTokens(res.accessToken, res.refreshToken, res.user))
-        .catch((err) => {
-          console.error('[OAuthHandler] Code exchange failed:', err);
-          processedKeyRef.current = null;
-          navigate('/login?error=oauth_exchange_failed', { replace: true });
-        });
-      return;
-    }
-
-    let urlToken: string | null = sessionStorage.getItem('oauth_token');
-    let urlRefreshToken: string | null = sessionStorage.getItem('oauth_refreshToken');
-    const fullUrl = window.location.href;
-    const urlMatch = fullUrl.match(/\?([^#]+)/);
-
-    if (!urlToken || !urlRefreshToken) {
-      if (urlMatch) {
-        const urlParams = new URLSearchParams(urlMatch[1]);
-        urlToken = urlParams.get('token') || urlToken;
-        urlRefreshToken = urlParams.get('refreshToken') || urlRefreshToken;
-      }
-      if (!urlToken) {
-        const q = new URLSearchParams(window.location.search);
-        urlToken = q.get('token') || searchParams.get('token');
-        urlRefreshToken = q.get('refreshToken') || searchParams.get('refreshToken');
-      }
-    }
-
-    if (!urlToken || !urlRefreshToken) {
-      return;
-    }
-
-    if (processedKeyRef.current === `tok:${urlToken}`) return;
-    processedKeyRef.current = `tok:${urlToken}`;
-
-    finalizeWithTokens(urlToken, urlRefreshToken);
-  }, [searchParams, location.pathname, navigate, setToken, setRefreshToken, setUser]);
+    authApi
+      .oauthExchangeCode(code)
+      .then((res) => finalizeWithTokens(res.accessToken, res.user))
+      .catch((err) => {
+        console.error('[OAuthHandler] Code exchange failed:', err);
+        processedCodeRef.current = null;
+        navigate('/login?error=oauth_exchange_failed', { replace: true });
+      });
+  }, [searchParams, location.pathname, navigate, setToken, setUser]);
 
   return null;
 }
-
-
