@@ -17,15 +17,7 @@ build/
 .vscode/
 *.sublime-*
 
-# Only one MD file in repo: SIGNALS.md (structure + signal logic)
-*.md
-!SIGNALS.md
-!liquidityscan-web/docs/*.md
-!liquidityscan-web/docs/reference/**/*.md
-!liquidityscan-web/security-pentest/**/*.md
-!liquidityscan-web/knowledge/*.md
-!liquidityscan-web/knowledge/perplexity/*.md
-!liquidityscan-web/knowledge/**/*.md
+# No wildcard *.md ignore — markdown docs belong in git
 
 # Backend-specific (in case we run from root)
 liquidityscan-web/backend/node_modules/
