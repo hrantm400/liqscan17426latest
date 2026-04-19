@@ -1,9 +1,15 @@
-import { Controller, Get, Post, Put, Param, Body, Req, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Param, Body, Req, UseGuards, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { PaymentsService } from './payments.service';
 import { Network } from '../lib/payments/types';
 import { PrismaService } from '../prisma/prisma.service';
+import { UserThrottlerGuard } from '../common/throttler/user-throttler.guard';
 
+// PR 3.3 — all routes sit behind the global JwtAuthGuard (see
+// app.module.ts). UserThrottlerGuard tracks by req.user.userId so a
+// legitimate polling client from a shared NAT doesn't starve peers.
 @Controller('payments')
+@UseGuards(UserThrottlerGuard)
 export class PaymentsController {
   constructor(
     private paymentsService: PaymentsService,
@@ -11,6 +17,7 @@ export class PaymentsController {
   ) { }
 
   @Post('create')
+  @Throttle({ strict: { limit: 10, ttl: 60000 } })
   async createPayment(
     @Body() data: { amount: number; currency?: string; subscriptionId?: string; metadata?: any },
     @Req() req: any,
@@ -25,6 +32,7 @@ export class PaymentsController {
   }
 
   @Get('status/:id')
+  @Throttle({ strict: { limit: 60, ttl: 60000 } })
   async getPaymentStatus(@Param('id') id: string, @Req() req: any) {
     const payment = await this.prisma.payment.findUnique({
       where: { id },
@@ -37,6 +45,7 @@ export class PaymentsController {
   }
 
   @Post('start')
+  @Throttle({ strict: { limit: 10, ttl: 60000 } })
   async startCustomPaymentSession(
     @Body() data: { network: Network },
     @Req() req: any,
@@ -77,6 +86,7 @@ export class PaymentsController {
   }
 
   @Put('status/:id')
+  @Throttle({ strict: { limit: 20, ttl: 60000 } })
   async updatePaymentStatus(
     @Param('id') id: string,
     @Body() data: { status: string; paymentId?: string },
@@ -98,6 +108,7 @@ export class PaymentsController {
   }
 
   @Post('subscription/:subscriptionId')
+  @Throttle({ strict: { limit: 20, ttl: 60000 } })
   async createSubscriptionPayment(
     @Param('subscriptionId') subscriptionId: string,
     @Req() req: any,
@@ -106,6 +117,7 @@ export class PaymentsController {
   }
 
   @Post('process-subscription/:paymentId')
+  @Throttle({ strict: { limit: 20, ttl: 60000 } })
   async processSubscriptionPayment(@Param('paymentId') paymentId: string, @Req() req: any) {
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },

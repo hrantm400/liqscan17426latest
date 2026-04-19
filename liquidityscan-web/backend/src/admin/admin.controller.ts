@@ -11,12 +11,18 @@ import {
   UseGuards,
   Req,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { UserTier } from '@prisma/client';
 import { AdminService } from './admin.service';
 import { AdminGuard } from './guards/admin.guard';
+import { UserThrottlerGuard } from '../common/throttler/user-throttler.guard';
 
+// PR 3.3 — admin mutations are user-tracked (not IP-tracked) so one
+// admin accidentally hammering the refund endpoint from home WiFi
+// doesn't lock another admin out of the same NAT. `strict` is 10/60s
+// by default in app.module; per-route @Throttle overrides below.
 @Controller('admin')
-@UseGuards(AdminGuard)
+@UseGuards(AdminGuard, UserThrottlerGuard)
 export class AdminController {
   constructor(private adminService: AdminService) {}
 
@@ -55,11 +61,13 @@ export class AdminController {
   }
 
   @Put('users/:id')
+  @Throttle({ strict: { limit: 30, ttl: 60000 } })
   async updateUser(@Param('id') id: string, @Body() data: { name?: string; isAdmin?: boolean; tier?: UserTier; subscriptionStatus?: string; subscriptionExpiresAt?: string }) {
     return this.adminService.updateUser(id, data);
   }
 
   @Put('users/:id/subscription')
+  @Throttle({ strict: { limit: 30, ttl: 60000 } })
   async setUserSubscription(
     @Param('id') id: string,
     @Body() data: { tier: UserTier; expiresAt?: string | null; status?: string },
@@ -68,6 +76,7 @@ export class AdminController {
   }
 
   @Post('users/:id/extend')
+  @Throttle({ strict: { limit: 30, ttl: 60000 } })
   async extendUserSubscription(
     @Param('id') id: string,
     @Body() data: { days: number },
@@ -76,6 +85,7 @@ export class AdminController {
   }
 
   @Delete('users/:id')
+  @Throttle({ strict: { limit: 30, ttl: 60000 } })
   async deleteUser(@Param('id') id: string) {
     return this.adminService.deleteUser(id);
   }
@@ -87,6 +97,7 @@ export class AdminController {
   }
 
   @Post('users/:id/features')
+  @Throttle({ strict: { limit: 30, ttl: 60000 } })
   async grantFeature(
     @Param('id') id: string,
     @Body() data: { feature: string; expiresAt?: string | null },
@@ -96,6 +107,7 @@ export class AdminController {
   }
 
   @Delete('users/:id/features/:feature')
+  @Throttle({ strict: { limit: 30, ttl: 60000 } })
   async revokeFeature(
     @Param('id') id: string,
     @Param('feature') feature: string,
@@ -110,16 +122,19 @@ export class AdminController {
   }
 
   @Post('categories')
+  @Throttle({ strict: { limit: 30, ttl: 60000 } })
   async createCategory(@Body() data: { name: string; slug: string; description?: string; icon?: string; order?: number }) {
     return this.adminService.createCategory(data);
   }
 
   @Put('categories/:id')
+  @Throttle({ strict: { limit: 30, ttl: 60000 } })
   async updateCategory(@Param('id') id: string, @Body() data: { name?: string; slug?: string; description?: string; icon?: string; order?: number }) {
     return this.adminService.updateCategory(id, data);
   }
 
   @Delete('categories/:id')
+  @Throttle({ strict: { limit: 30, ttl: 60000 } })
   async deleteCategory(@Param('id') id: string) {
     return this.adminService.deleteCategory(id);
   }
@@ -150,16 +165,19 @@ export class AdminController {
   }
 
   @Put('payments/:id/confirm')
+  @Throttle({ strict: { limit: 20, ttl: 60000 } })
   async confirmPayment(@Param('id') id: string) {
     return this.adminService.confirmPayment(id);
   }
 
   @Put('payments/:id/cancel')
+  @Throttle({ strict: { limit: 20, ttl: 60000 } })
   async cancelPayment(@Param('id') id: string) {
     return this.adminService.cancelPendingPayment(id);
   }
 
   @Put('payments/:id/refund')
+  @Throttle({ strict: { limit: 20, ttl: 60000 } })
   async refundPayment(@Param('id') id: string) {
     return this.adminService.refundCompletedPayment(id);
   }
@@ -184,6 +202,10 @@ export class AdminController {
   }
 
   @Post('broadcast')
+  // PR 3.3 — mass-email / mass-telegram blast. 5 per 5 minutes gives
+  // room for the iterate-fix-typo-resend workflow while still blocking
+  // abuse. Adjust if an admin hits the wall during normal composition.
+  @Throttle({ burst: { limit: 5, ttl: 300000 } })
   async broadcast(
     @Body() data: { subject: string; body: string; channel: 'email' | 'telegram' | 'both'; filter: 'all' | 'free' | 'paid' },
   ) {
@@ -196,16 +218,20 @@ export class AdminController {
   }
 
   @Patch('settings/launch-promo')
+  @Throttle({ strict: { limit: 10, ttl: 60000 } })
   async setLaunchPromo(@Body() data: { enabled: boolean }) {
     return this.adminService.setLaunchPromoFullAccess(Boolean(data?.enabled));
   }
 
   @Patch('settings/cisd-config')
+  @Throttle({ strict: { limit: 10, ttl: 60000 } })
   async setCisdConfig(@Body() data: { cisdPivotLeft: number; cisdPivotRight: number; cisdMinConsecutive: number }) {
     return this.adminService.setCisdConfig(data);
   }
 
   @Post('settings/test-smtp')
+  // PR 3.3 — SMTP-send abuse guard. 5/5min matches broadcast window.
+  @Throttle({ burst: { limit: 5, ttl: 300000 } })
   async testSmtp(@Body() data: { to?: string }) {
     return this.adminService.testSmtp(data?.to);
   }

@@ -59,7 +59,8 @@ export class AuthController {
   @Post('register')
   @Public()
   @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  // PR 3.3 — account-creation spam guard (was 10/60s).
+  @Throttle({ strict: { limit: 3, ttl: 60000 } })
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.register(dto);
     this.setRefreshCookie(res, result.refreshToken);
@@ -69,7 +70,9 @@ export class AuthController {
   @Post('login')
   @Public()
   @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 15, ttl: 60000 } })
+  // PR 3.3 — credential brute-force guard (was 15/60s). Matches
+  // GitHub/Google-class limits.
+  @Throttle({ strict: { limit: 5, ttl: 60000 } })
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.login(dto);
     this.setRefreshCookie(res, result.refreshToken);
@@ -79,7 +82,10 @@ export class AuthController {
   @Post('refresh')
   @Public()
   @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  // PR 3.3 — relaxed from 30/60s after PR 3.1 cut access-token TTL to 1h.
+  // 60/60s covers ~60 concurrent browser tabs silent-refreshing from
+  // the same IP without bumping into the limit.
+  @Throttle({ strict: { limit: 60, ttl: 60000 } })
   async refresh(
     @Req() req: Request,
     @Body('refreshToken') bodyToken: string | undefined,
@@ -97,7 +103,7 @@ export class AuthController {
   @Post('logout')
   @Public()
   @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  @Throttle({ strict: { limit: 20, ttl: 60000 } })
   @HttpCode(204)
   async logout(
     @Req() req: Request,
@@ -112,7 +118,8 @@ export class AuthController {
   @Post('google/one-tap')
   @Public()
   @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  // PR 3.3 — OAuth brute-force / replay guard (was 20/60s).
+  @Throttle({ strict: { limit: 10, ttl: 60000 } })
   async googleOneTap(
     @Body('credential') credential: string,
     @Res({ passthrough: true }) res: Response,
@@ -126,7 +133,8 @@ export class AuthController {
   @Post('oauth/exchange')
   @Public()
   @UseGuards(ThrottlerGuard)
-  @Throttle({ default: { limit: 25, ttl: 60000 } })
+  // PR 3.3 — one-time code exchange replay guard (was 25/60s).
+  @Throttle({ strict: { limit: 10, ttl: 60000 } })
   async oauthExchange(@Body() dto: OAuthExchangeDto, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.exchangeOAuthCode(dto.code);
     this.setRefreshCookie(res, result.refreshToken);

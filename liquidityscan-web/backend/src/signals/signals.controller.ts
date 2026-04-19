@@ -1,4 +1,5 @@
 import { Controller, Get, Post, Body, Query, Param, NotFoundException, Logger, UseGuards } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../auth/decorators/public.decorator';
 import { AdminGuard } from '../admin/guards/admin.guard';
 import { SignalsService } from './signals.service';
@@ -40,6 +41,11 @@ export class SignalsController {
 
 
   @Post('ict-bias')
+  // PR 3.3 — DoS guard on the heavy detectICTBias compute path.
+  // IP-tracked (default) rather than user-tracked to cover both the
+  // authenticated and anonymous frontend call paths uniformly.
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ strict: { limit: 60, ttl: 60000 } })
   async getIctBias(@Body() candles: any[]) {
     const result = detectICTBias(candles);
     if (!result) return { bias: 'RANGING', message: 'Not enough data' };

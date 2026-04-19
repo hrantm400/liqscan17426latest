@@ -33,11 +33,14 @@ import { AppConfigModule } from './app-config/app-config.module';
       envFilePath: '.env',
     }),
     LoggerModule.forRoot(pinoParams),
+    // PR 3.3 — named throttlers. Per-route @Throttle({ <name>: ... })
+    // overrides the named window. ThrottlerGuard evaluates every
+    // registered throttler, so `default` stays a safety net on routes
+    // that only opt into `strict` or `burst`.
     ThrottlerModule.forRoot([
-      {
-        ttl: 60000,
-        limit: 120,
-      },
+      { name: 'default', ttl: 60000, limit: 120 },
+      { name: 'strict', ttl: 60000, limit: 10 },
+      { name: 'burst', ttl: 300000, limit: 5 },
     ]),
     ScheduleModule.forRoot(),
     PrismaModule,
