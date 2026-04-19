@@ -260,6 +260,24 @@ These are **deferred**, not blocking, and must not be started without explicit a
 - **Estimated effort:** 30 min (edit + 2 unit tests asserting the path
   survives, query does not).
 
+### TD-14 — Silence Sentry init log during tests
+- **Source:** observed during the PR 3.3b `npm test` run — `[sentry]
+  Initialized with DSN ending in …` appears in jest output because the
+  `require('dotenv').config()` added in `sentry.config.ts` (TD-12 fix)
+  loads the prod `.env` when the module is side-effect-imported during
+  specs that touch the `common/__tests__/sentry-scrubber.spec.ts` graph.
+- **Problem:** the log line is cosmetic (no events are actually sent
+  during tests — `beforeSend` is exercised directly, `Sentry.init` is
+  not reached in the scrub suite), but it confuses CI output and hints
+  that prod config is bleeding into the test env, which is a lint-style
+  concern for future reviewers.
+- **Scope:** wrap the `console.log('[sentry] Initialized …')` in
+  `backend/src/common/sentry.config.ts` with a
+  `process.env.NODE_ENV !== 'test'` guard. Jest sets `NODE_ENV=test`
+  automatically, so the gate is transparent in dev and prod.
+- **Effort:** 1-line change + verify jest output is clean.
+- **Priority:** LOW.
+
 ---
 
 ## Findings — PR 3.1 retrospective
