@@ -14,6 +14,13 @@
  * See TD-11 when profiling is needed (requires ProfilingIntegration +
  * tracesSampleRate > 0).
  */
+// Load .env here: this module runs BEFORE ConfigModule.forRoot() (because
+// Sentry must monkey-patch the http module before NestJS boots), so
+// process.env.SENTRY_DSN would otherwise be unset when read from .env files.
+// No-op if already loaded or the file is missing.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+require('dotenv').config();
+
 import * as Sentry from '@sentry/node';
 
 export const SENSITIVE_PATH_PARTS = [
@@ -108,6 +115,9 @@ export function initSentry(): void {
     sendDefaultPii: false,
     beforeSend,
   });
+
+  // eslint-disable-next-line no-console
+  console.log(`[sentry] Initialized with DSN ending in ${dsn.slice(-8)}`);
 }
 
 initSentry();
