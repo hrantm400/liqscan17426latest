@@ -209,6 +209,37 @@ These are **deferred**, not blocking, and must not be started without explicit a
   the existing JSON logs can't localize).
 - **Estimated effort:** 2 hours.
 
+### TD-12 — Document Sentry bootstrap-order constraint (config-source coupling)
+- **Source:** PR 3.2 DSN activation — `SENTRY_DSN` was set in `.env` but
+  Sentry stayed dormant until `require('dotenv').config()` was added
+  explicitly to `backend/src/common/sentry.config.ts`.
+- **Context:** `Sentry.init()` MUST run before NestJS bootstrap so that
+  Sentry's auto-instrumentation can monkey-patch the node `http` module
+  before NestJS's HTTP stack loads. Side effect: any configuration
+  source that depends on NestJS's DI lifecycle (`@nestjs/config`
+  `ConfigModule.forRoot()`, `ConfigService`, etc.) is **not available**
+  at Sentry init time. Current solution relies on an explicit
+  `require('dotenv').config()` call as the first statement of
+  `sentry.config.ts`, which loads the `.env` file into `process.env`
+  before `initSentry()` reads `SENTRY_DSN`.
+- **Failure mode if ignored:** a future migration away from `.env`
+  files (e.g., Vault / AWS Secrets Manager / Kubernetes `ConfigMap` via
+  a NestJS loader) will silently break Sentry — `initSentry()` will see
+  an empty DSN and skip `Sentry.init()` without any error, exactly the
+  pattern we hit during PR 3.2 activation.
+- **Action when infra moves off `.env`:**
+  1. Whatever fetches the secret must run synchronously **before**
+     `import './common/sentry.config'` in `main.ts` (or move the fetch
+     into `sentry.config.ts` itself).
+  2. Alternative: use Sentry's lazy-init pattern (`Sentry.getClient()`
+     + `Sentry.init()` triggered later) and accept that any `http`
+     activity before init won't be instrumented.
+  3. Keep the diagnostic `[sentry] Initialized with DSN ending in …`
+     log — it's the only passive signal that bootstrap order is intact.
+- **Priority:** LOW. Documentation / future-proofing — no action until
+  infra changes. Critical to revisit at that point.
+- **Estimated effort:** 1 hour (refactor + verify) if/when triggered.
+
 ---
 
 ## Findings — PR 3.1 retrospective
