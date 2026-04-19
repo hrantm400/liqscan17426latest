@@ -240,6 +240,26 @@ These are **deferred**, not blocking, and must not be started without explicit a
   infra changes. Critical to revisit at that point.
 - **Estimated effort:** 1 hour (refactor + verify) if/when triggered.
 
+### TD-13 — Scrub URL query params on sensitive paths
+- **Source:** scrubbing audit during the PR 3.3b OAuth race investigation.
+- **Problem:** the `/api/auth/google/callback?...&code=...` log entry in
+  pino contained Google's full one-time authorization code in the URL
+  query string. The code is single-use (consumed by passport's guard
+  before the log line is written), so it is not actively exploitable,
+  but the principle is wrong — URL query params on auth/payment/admin
+  paths should never end up in logs or Sentry events in the clear.
+- **Scope:** extend two places to strip query params (keep path) when
+  the URL matches `/api/auth/*`, `/api/payments/*`, `/api/admin/*`:
+  1. `backend/src/common/logger.config.ts` — update the `req` serializer
+     to emit `req.url.split('?')[0]` on matched paths.
+  2. `backend/src/common/sentry.config.ts` — in `beforeSend`, when the
+     URL matches a `SENSITIVE_PATH_PARTS` entry, also strip the query
+     string from `event.request.url` (currently only `req.data` is
+     dropped).
+- **Priority:** LOW (no active leak today, defensive hardening).
+- **Estimated effort:** 30 min (edit + 2 unit tests asserting the path
+  survives, query does not).
+
 ---
 
 ## Findings — PR 3.1 retrospective

@@ -1,7 +1,7 @@
 import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { OAuth2Client } from 'google-auth-library';
 import { User } from '@prisma/client';
@@ -352,13 +352,24 @@ export class AuthService {
   }
 
   private async generateTokens(userId: string, email: string) {
-    const payload = { sub: userId, email };
+    // PR 3.3b: each signed JWT gets its own `jti` (RFC 7519 §4.1.7) so that
+    // two generateTokens() calls for the same user within the same wall-clock
+    // second can never produce byte-identical refresh tokens. Before this,
+    // the same {sub, email} payload + 1-second `iat` resolution + identical
+    // secret produced identical signatures, which collided on the
+    // RefreshToken.token @unique constraint (observed in prod via Sentry on
+    // /auth/oauth/exchange racing bootstrapAuth's /auth/refresh).
+    const accessJti = randomUUID();
+    const refreshJti = randomUUID();
 
-    const accessToken = this.jwtService.sign(payload);
-    const refreshToken = this.jwtService.sign(payload, {
-      secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
-      expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') || '30d',
-    });
+    const accessToken = this.jwtService.sign({ sub: userId, email, jti: accessJti });
+    const refreshToken = this.jwtService.sign(
+      { sub: userId, email, jti: refreshJti },
+      {
+        secret: this.configService.getOrThrow<string>('JWT_REFRESH_SECRET'),
+        expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN') || '30d',
+      },
+    );
 
     // Save refresh token
     const expiresAt = new Date();
