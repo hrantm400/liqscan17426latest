@@ -331,6 +331,30 @@ These are **deferred**, not blocking, and must not be started without explicit a
   so future-me doesn't have to rediscover that PR 3.4 deliberately
   stopped short of PITR.
 
+### TD-18 — Backup failure-path drill
+- **Source:** deferred V8 from PR 3.4 server-side verification. V3–V7,
+  V9, V11 all passed green on first real install. V8 (deliberately
+  break the env file, confirm healthchecks `/fail` ping + Telegram
+  failure message + non-zero exit code) was skipped to avoid poking
+  a freshly-working setup.
+- **Why it matters:** the trap-ERR → hc_ping → tg_send path is the
+  ONLY line of defence between "backup silently broken" and "we find
+  out within 25h via healthchecks". If that path is wrong (bad chat_id,
+  token rotation, Telegram API change, hc_ping URL typo) we discover
+  it on the day we actually need the alert.
+- **Scope:** pick one of the following and run once per quarter:
+  1. Rename `/etc/liquidityscan-backup.passphrase` temporarily, run
+     `scripts/backup-db.sh`, assert rc=1, healthchecks `/fail` event
+     appears in dashboard, Telegram message received. Restore the file.
+  2. Point `PGHOST=nonexistent` in a throwaway env file, run with
+     `BACKUP_ENV_FILE=/tmp/broken-backup.env`, assert the same three
+     outcomes.
+- **Effort:** 10 minutes each quarter. Can be folded into TD-15
+  (monthly restore rehearsal) once that job lands.
+- **Priority:** LOW — happy path is live and observed daily via the
+  success Telegram message; absence of the success message is itself
+  a signal.
+
 ---
 
 ## Findings — PR 3.1 retrospective
