@@ -32,6 +32,22 @@ export function initSentry(): void {
     environment: import.meta.env.MODE,
     sampleRate: Number(import.meta.env.VITE_SENTRY_SAMPLE_RATE ?? '1.0'),
     sendDefaultPii: false,
+    // Third-party script noise — not our bugs, drop before network upload.
+    // Deliberately NOT filtering "Failed to fetch" / "Network request failed":
+    // those may be legitimate API-reachability errors worth seeing.
+    ignoreErrors: [
+      // Telegram Android in-app browser injects a WebApp bridge on any site
+      // opened via a Telegram chat link. The bridge posts events to the
+      // Telegram shell and gets "Method not found" because we are not a
+      // registered Telegram Mini App. Fires inside a setTimeout, auto-captured.
+      /Error invoking postEvent/i,
+      /postEvent.*Method not found/i,
+      // Safari / WebKit benign layout-loop detection.
+      /ResizeObserver loop limit exceeded/i,
+      /ResizeObserver loop completed with undelivered notifications/i,
+      // Third-party scripts throwing non-Error objects.
+      /Non-Error promise rejection captured/i,
+    ],
     beforeSend(event) {
       if (event.user) {
         event.user = event.user.id ? { id: event.user.id } : {};
