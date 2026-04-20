@@ -65,6 +65,8 @@ throttler, so `default` still applies to every route.
 | `/admin/settings/test-smtp` | POST | 5 | 300s | user | SMTP-send abuse guard |
 | `/signals/ict-bias` | POST | 60 | 60s | IP | heavy compute DoS guard |
 | `/debug/throw-sentry` | POST | 1 | 3600s | user | Sentry quota guard |
+| `/admin/backups` | GET | 30 | 60s | user | dashboard list — read-only |
+| `/admin/backups/health` | GET | 60 | 60s | user | freshness probe for dashboard badge |
 
 Anything not listed here falls back to the global `default` throttler
 (120/60s IP).

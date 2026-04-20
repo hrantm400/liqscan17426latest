@@ -278,6 +278,59 @@ These are **deferred**, not blocking, and must not be started without explicit a
 - **Effort:** 1-line change + verify jest output is clean.
 - **Priority:** LOW.
 
+### TD-15 — Automated monthly restore rehearsal
+- **Source:** deferred from PR 3.4. Encrypted `pg_dump -Fc` files are only
+  as good as their last successful `pg_restore`. We verified restore once
+  during the PR 3.4 smoke (V5) but there is nothing that keeps re-proving
+  it as schema and row counts evolve.
+- **Scope:** a scheduled job (monthly, first Sunday) that
+  - picks the latest `*.dump.gpg` from `/var/backups/liquidityscan/daily/`,
+  - decrypts with `GPG_PASSPHRASE_FILE`,
+  - pipes into `pg_restore` against a throwaway DB
+    (`liquidityscan_restore_rehearsal`),
+  - asserts row counts on `User`, `Signal`, `RefreshToken` are within a
+    sane delta of the live DB (or non-zero, depending on how drift-tolerant
+    we want to be),
+  - drops the throwaway DB,
+  - pings a dedicated healthchecks.io check on success, posts Telegram on
+    failure.
+- **Priority:** MEDIUM — silent bit-rot on backups is the classic trap
+  that makes a backup program feel safe right up to the moment it isn't.
+- **Effort:** ~2 hours of scripting + a second healthchecks check.
+
+### TD-16 — Harden rclone B2 credential storage
+- **Source:** PR 3.4 stored B2 application key + account ID in
+  `~root/.config/rclone/rclone.conf` (chmod 600). Good for single-host,
+  but the file is plaintext at rest and lives on the same disk as the
+  thing it is protecting.
+- **Options:**
+  - `rclone config --obscure` — light XOR, not a real secret, trivially
+    reversible with the config file. Default `rclone config` already
+    does this.
+  - systemd credential (`LoadCredentialEncrypted=`) — machine-bound,
+    decrypted only for the unit that needs it.
+  - HashiCorp Vault or equivalent — overkill solo, obvious fit for
+    multi-host.
+- **Priority:** LOW while infra is a single VM. Revisit when we add a
+  second API replica or move backups to a dedicated host.
+
+### TD-17 — Consider WAL archiving / PITR when scale warrants it
+- **Source:** PR 3.4 gives us a 24-hour RPO (worst case we lose 24h of
+  data since the last dump) and a ~5-minute RTO (decrypt + pg_restore on
+  a 60 MB DB). That's fine for the current product and user count.
+- **When to revisit:**
+  - DB > 10 GB — full dumps start hurting. Incremental/WAL shines.
+  - Paying users > several hundred — 24h data loss starts to really
+    sting.
+  - Any signal becomes "source of truth" for external automation that
+    would notice a 24h rewind.
+- **Scope:** enable `wal_level = replica`, `archive_mode = on`,
+  `archive_command` shipping WAL segments to B2 (or pg_wal-backed tool
+  like `pgbackrest` / `barman`).
+- **Priority:** LOW until one of the triggers above hits. Mentioned here
+  so future-me doesn't have to rediscover that PR 3.4 deliberately
+  stopped short of PITR.
+
 ---
 
 ## Findings — PR 3.1 retrospective
