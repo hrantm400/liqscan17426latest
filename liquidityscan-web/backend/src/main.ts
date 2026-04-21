@@ -59,9 +59,18 @@ async function bootstrap() {
       'https://apis.google.com',
       'https://www.googletagmanager.com',
       'https://www.google-analytics.com',
-      'https://www.clarity.ms',
+      // Clarity tag loads the full SDK from scripts.clarity.ms (not
+      // www.clarity.ms) — observed during PR 3.5 Stage 1.
+      'https://*.clarity.ms',
     ],
-    styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+    styleSrc: [
+      "'self'",
+      "'unsafe-inline'",
+      'https://fonts.googleapis.com',
+      // GSI client ships its own stylesheet at accounts.google.com/gsi/style
+      // alongside the JS — observed during PR 3.5 Stage 1.
+      'https://accounts.google.com',
+    ],
     imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
     fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
     connectSrc: [

@@ -52,8 +52,9 @@ default-src 'self';
 script-src 'self' 'unsafe-inline'
   https://accounts.google.com https://apis.google.com
   https://www.googletagmanager.com https://www.google-analytics.com
-  https://www.clarity.ms;
-style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+  https://*.clarity.ms;
+style-src 'self' 'unsafe-inline'
+  https://fonts.googleapis.com https://accounts.google.com;
 img-src 'self' data: https: blob:;
 font-src 'self' data: https://fonts.gstatic.com;
 connect-src 'self'
@@ -72,14 +73,18 @@ upgrade-insecure-requests
 
 ### Origin rationale
 
-- `accounts.google.com`, `apis.google.com`, `oauth2.googleapis.com` —
-  Google OAuth GSI client + token exchange (`Login.tsx`, `Register.tsx`).
+- `accounts.google.com` — Google OAuth GSI client (`Login.tsx`,
+  `Register.tsx`) serves BOTH the JS and its companion stylesheet
+  (`/gsi/style`); needs to be in `script-src` AND `style-src` AND
+  `frame-src` AND `connect-src`. `apis.google.com` and
+  `oauth2.googleapis.com` cover token exchange.
 - `www.googletagmanager.com`, `www.google-analytics.com`,
   `region1.google-analytics.com` — GTM snippet in `frontend/index.html`
   plus analytics beacons it fires.
-- `www.clarity.ms`, `*.clarity.ms` — Microsoft Clarity (`lib/clarity.ts`)
-  script + beacon domains (Clarity load-balances beacons across regional
-  subdomains).
+- `*.clarity.ms` — Microsoft Clarity (`lib/clarity.ts`). Bootstrap loads
+  from `www.clarity.ms`, full SDK from `scripts.clarity.ms`, beacons to
+  regional subdomains. The wildcard covers all of them; needed in both
+  `script-src` and `connect-src`.
 - `*.ingest.de.sentry.io` — Sentry frontend DSN host (PR 3.2).
 - `fonts.googleapis.com`, `fonts.gstatic.com` — Google Fonts imported
   from `frontend/src/index.css`.
@@ -168,6 +173,23 @@ Maintain the running list in this PR's issue / Slack thread. At the
 Do **not** proceed to Stage 2 with open violations. Stage 2 turns each
 one into a broken feature.
 
+### Informational warnings that are NOT violations
+
+The following console messages are expected in Stage 1 and do **not**
+indicate a problem:
+
+- `The Content Security Policy directive 'upgrade-insecure-requests' is
+  ignored when delivered in a report-only policy.` — per the CSP spec,
+  `upgrade-insecure-requests` is a state-setting directive that
+  browsers refuse to honour in Report-Only mode (otherwise the browser
+  would be "actively doing something" while pretending to only report).
+  It activates automatically when the header name is flipped to
+  `Content-Security-Policy` at Stage 2. Ignore.
+- `[GSI_LOGGER]: FedCM get() rejects with NetworkError` and
+  `Provider's accounts list is empty.` — Google Identity Services
+  internal logs fired when no active Google session exists in the
+  browser or FedCM is otherwise unavailable. Unrelated to CSP.
+
 ### Stage 2 — Enforcing (follow-up config flip, no PR)
 
 Backend (`.env`):
@@ -247,10 +269,10 @@ add_header Cross-Origin-Resource-Policy "cross-origin" always;
 add_header Origin-Agent-Cluster "?1" always;
 
 # Stage 1 — Report-Only (active now).
-add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com https://www.googletagmanager.com https://www.google-analytics.com https://www.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://liquidityscan.io wss://liquidityscan.io https://*.ingest.de.sentry.io https://accounts.google.com https://oauth2.googleapis.com https://www.google-analytics.com https://region1.google-analytics.com https://*.clarity.ms; frame-src 'self' https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests" always;
+add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com https://www.googletagmanager.com https://www.google-analytics.com https://*.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; img-src 'self' data: https: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://liquidityscan.io wss://liquidityscan.io https://*.ingest.de.sentry.io https://accounts.google.com https://oauth2.googleapis.com https://www.google-analytics.com https://region1.google-analytics.com https://*.clarity.ms; frame-src 'self' https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests" always;
 
 # Stage 2 — Enforcing (flip: comment the Report-Only line above, uncomment below).
-# add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com https://www.googletagmanager.com https://www.google-analytics.com https://www.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; img-src 'self' data: https: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://liquidityscan.io wss://liquidityscan.io https://*.ingest.de.sentry.io https://accounts.google.com https://oauth2.googleapis.com https://www.google-analytics.com https://region1.google-analytics.com https://*.clarity.ms; frame-src 'self' https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests" always;
+# add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com https://www.googletagmanager.com https://www.google-analytics.com https://*.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; img-src 'self' data: https: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://liquidityscan.io wss://liquidityscan.io https://*.ingest.de.sentry.io https://accounts.google.com https://oauth2.googleapis.com https://www.google-analytics.com https://region1.google-analytics.com https://*.clarity.ms; frame-src 'self' https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests" always;
 ```
 
 ## Site config edits
@@ -316,6 +338,41 @@ sudo systemctl reload nginx
 
 Either rollback takes under 2 minutes and requires no DB change, no
 frontend rebuild, and no user session invalidation.
+
+## Observation log
+
+Running log of what Stage 1 observation surfaced and how it was
+resolved. Future changes to the CSP origin set should append here so
+the "why" survives.
+
+### Stage 1, first sweep — three CSP gaps + Cloudflare decision
+
+1. **`https://static.cloudflareinsights.com/beacon.min.js`** —
+   Cloudflare auto-injects this when "Browser Insights" / "Web
+   Analytics" is enabled on the zone. **Resolution:** disabled at the
+   Cloudflare dashboard (Analytics & Logs → Web Analytics → off for
+   liquidityscan.io). GA/GTM + Microsoft Clarity already cover the
+   analytics angle; a third vendor on every page load is not worth the
+   CSP surface area or the perf cost. No whitelist entry added. If
+   anyone ever turns Browser Insights back on, add
+   `https://static.cloudflareinsights.com` to `script-src` and
+   `https://cloudflareinsights.com` to `connect-src` in both nginx and
+   Helmet.
+2. **`https://scripts.clarity.ms/<version>/clarity.js`** — Clarity
+   bootstrap (loaded from `www.clarity.ms`) pulls the full SDK from
+   `scripts.clarity.ms`. **Resolution:** script-src widened from
+   `https://www.clarity.ms` to `https://*.clarity.ms` (matches
+   connect-src).
+3. **`https://accounts.google.com/gsi/style`** — GSI client ships its
+   own stylesheet alongside the JS. **Resolution:** added
+   `https://accounts.google.com` to `style-src`.
+
+`unsafe-eval` watch: no `Refused to evaluate a string as JavaScript`
+violations observed. Vite production build does not use runtime
+`eval()`; `'unsafe-eval'` stays OUT of `script-src` at Stage 2.
+
+After patching 2 and 3 and toggling CF Browser Insights off, the 24h
+Stage 1 observation window was restarted.
 
 ## Out of scope
 
