@@ -52,6 +52,13 @@ interface LifeHint {
   fresh?: TF;
   /** TF that should render `breathing`. Typically 4H or 1H. */
   breathing?: TF;
+  /**
+   * Sub-phase of the breathing window (1 = first candle after fresh, 2 =
+   * second). Defaults to 1 when omitted. Used by the pair-detail redesign
+   * to exercise both the yellow-amber (1/2) and darker-amber (2/2) border
+   * tints in the mock UI.
+   */
+  breathingPhase?: 1 | 2;
 }
 
 interface AnchorChange {
@@ -98,10 +105,13 @@ function buildTfLastCandleClose(chain: TF[], life?: LifeHint): Partial<Record<TF
       // ~30% into the first candle window since close.
       out[tf] = MOCK_NOW - Math.floor(0.3 * candleMs);
     } else if (life?.breathing === tf) {
-      // ~30% into the second candle window.
-      out[tf] = MOCK_NOW - Math.floor(1.3 * candleMs);
+      // Phase 1: ~30% into the 2nd candle window (1.3·candleMs).
+      // Phase 2: ~30% into the 3rd candle window (2.3·candleMs).
+      const phase = life.breathingPhase ?? 1;
+      out[tf] = MOCK_NOW - Math.floor((phase + 0.3) * candleMs);
     } else {
-      out[tf] = MOCK_NOW - 3 * candleMs;
+      // Steady — anchor beyond the 3-candle breathing window.
+      out[tf] = MOCK_NOW - 4 * candleMs;
     }
   }
   return out;
@@ -263,7 +273,7 @@ const SE_SEEDS: MockSeed[] = [
     direction: 'BUY',
     chain: ['W', '1D', '4H'],
     sePerTf: { W: 'RUN+', '1D': 'RUN+', '4H': 'RUN+' },
-    life: { breathing: '4H' },
+    life: { breathing: '4H', breathingPhase: 2 },
     detectedHoursAgo: 72,
     lastPromotedHoursAgo: 12,
     price: 142.88,
@@ -515,7 +525,7 @@ const CRT_SEEDS: MockSeed[] = [
     variant: 'CRT',
     direction: 'BUY',
     chain: ['1D', '4H', '1H'],
-    life: { breathing: '4H' },
+    life: { breathing: '4H', breathingPhase: 2 },
     detectedHoursAgo: 34,
     lastPromotedHoursAgo: 4,
     price: 0.5834,
@@ -706,7 +716,7 @@ const BIAS_SEEDS: MockSeed[] = [
     variant: 'BIAS',
     direction: 'BUY',
     chain: ['1D', '1H'],
-    life: { breathing: '1H' },
+    life: { breathing: '1H', breathingPhase: 2 },
     detectedHoursAgo: 54,
     price: 0.132,
     change24h: 5.2,

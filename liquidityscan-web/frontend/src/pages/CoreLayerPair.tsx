@@ -1,9 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo } from 'react';
 import { Navigate, useParams } from 'react-router-dom';
 import { PageHeader } from '../components/layout/PageHeader';
-import { TFStack } from '../components/core-layer/TFStack';
-import { CoreLayerChart } from '../components/core-layer/CoreLayerChart';
-import { LifeStatePill } from '../components/core-layer/LifeStatePill';
+import { CoreLayerChartTile } from '../components/core-layer/CoreLayerChartTile';
 import { CorrelationBadge } from '../components/core-layer/CorrelationBadge';
 import { PlusBadge } from '../components/core-layer/PlusBadge';
 import { UpgradeModal, buildVisibleChainString } from '../components/core-layer/UpgradeModal';
@@ -11,16 +9,18 @@ import { HowItWorksCollapsible } from '../components/core-layer/HowItWorksCollap
 import { ProLabelPill } from '../components/subscriptions/ProLabelPill';
 import { ViewAsTierToggle } from '../components/core-layer/ViewAsTierToggle';
 import { getMockSignalByPair } from '../core-layer/mockCoreLayerData';
-import { chainHasProTf, deepestTf } from '../core-layer/helpers';
+import { chainHasProTf } from '../core-layer/helpers';
 import { VARIANT_FROM_SLUG, VARIANT_META, ANCHOR_META } from '../core-layer/constants';
 import { useCoreLayerTier } from '../core-layer/TierContext';
-import type { CoreLayerHistoryEntry, TF } from '../core-layer/types';
+import type { CoreLayerHistoryEntry } from '../core-layer/types';
 
 /**
- * `/core-layer/:variant/:pair` — pair detail page. TFStack selects the active
- * TF (default = deepest in the chain, spec line 139); chart redraws per TF;
- * action row stubs open external links; history prose timeline renders from
- * the signal's own `history` array (spec line 250).
+ * `/core-layer/:variant/:pair` — pair detail page.
+ *
+ * The page renders a responsive CSS grid of per-TF charts (one tile per TF in
+ * the chain). Each tile owns its own header (TF · life pill · pattern · time),
+ * signal-candle highlight, and "Open in TradingView" link. No TFStack — TF
+ * metadata lives in the chart headers themselves (Phase 1 redesign).
  *
  * Base users attempting to open a Pro-gated pair are intercepted by an
  * `UpgradeModal` in blocking mode. In v1 no pair is Pro-gated because mock
@@ -36,13 +36,6 @@ export const CoreLayerPair: React.FC = () => {
     [variant, pair],
   );
 
-  const defaultTf: TF | undefined = signal ? deepestTf(signal.chain) : undefined;
-  const [activeTf, setActiveTf] = useState<TF | undefined>(defaultTf);
-
-  React.useEffect(() => {
-    setActiveTf(defaultTf);
-  }, [defaultTf]);
-
   if (!variant) return <Navigate to="/core-layer" replace />;
   if (!signal) return <Navigate to={`/core-layer/${variantSlug}`} replace />;
 
@@ -53,7 +46,6 @@ export const CoreLayerPair: React.FC = () => {
 
   const directionColor = signal.direction === 'BUY' ? 'text-primary' : 'text-red-400';
   const change24hColor = signal.change24h >= 0 ? 'text-primary' : 'text-red-400';
-  const currentTf = activeTf ?? defaultTf ?? signal.chain[0];
 
   return (
     <div className="flex flex-col gap-5 pb-10">
@@ -72,7 +64,7 @@ export const CoreLayerPair: React.FC = () => {
       <div className="px-4 md:px-6 flex flex-col gap-5">
         <header className="flex flex-col md:flex-row md:items-end md:justify-between gap-3">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-3xl font-black dark:text-white light:text-slate-900 tracking-tight">
                 {signal.pair}
               </h1>
@@ -90,7 +82,7 @@ export const CoreLayerPair: React.FC = () => {
               </span>
               {signal.plusSummary && <PlusBadge summary={signal.plusSummary} />}
             </div>
-            <div className="mt-2 flex items-center gap-3 text-sm">
+            <div className="mt-2 flex items-center gap-3 text-sm flex-wrap">
               <span className="font-mono dark:text-gray-200 light:text-slate-700">
                 {formatPrice(signal.price)}
               </span>
@@ -98,9 +90,7 @@ export const CoreLayerPair: React.FC = () => {
                 {signal.change24h >= 0 ? '+' : ''}
                 {signal.change24h.toFixed(2)}% 24h
               </span>
-              <span className={`font-bold ${directionColor}`}>
-                {variantMeta.shortLabel}
-              </span>
+              <span className={`font-bold ${directionColor}`}>{variantMeta.shortLabel}</span>
             </div>
           </div>
           <div className="flex items-center flex-wrap gap-1.5">
@@ -110,38 +100,25 @@ export const CoreLayerPair: React.FC = () => {
           </div>
         </header>
 
-        <TFStack
-          chain={signal.chain}
-          tfLifeState={signal.tfLifeState}
-          activeTf={currentTf}
-          onSelect={setActiveTf}
-        />
-
+        {/* Per-TF chart grid (Phase 1 redesign).
+            auto-fit + minmax(320px, 1fr) gives us: 1 column at ≤360px,
+            2 columns at roughly 640–960px, and more columns on wide screens.
+            Mobile stacks naturally — no extra media queries. */}
         <section className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-black dark:text-white light:text-slate-900 tracking-wide uppercase">
-              {signal.pair} · {currentTf}
-            </h2>
-            {signal.tfLifeState[currentTf] && currentTf !== 'W' && currentTf !== '1D' && (
-              <LifeStatePill state={signal.tfLifeState[currentTf]!} />
-            )}
+          <h2 className="text-sm font-black dark:text-white light:text-slate-900 tracking-wide uppercase">
+            Chain · {signal.chain.join(' → ')}
+          </h2>
+          <div
+            className="grid gap-4"
+            style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}
+          >
+            {signal.chain.map((tf) => (
+              <CoreLayerChartTile key={tf} signal={signal} tf={tf} />
+            ))}
           </div>
-          <CoreLayerChart
-            pair={signal.pair}
-            tf={currentTf}
-            direction={signal.direction}
-            seedPrice={signal.price}
-          />
         </section>
 
         <section className="flex flex-wrap gap-2">
-          <ActionButton
-            icon="open_in_new"
-            label="Open on TradingView"
-            onClick={() =>
-              console.log('open TradingView', { pair: signal.pair, tf: currentTf })
-            }
-          />
           <ActionButton
             icon="star_border"
             label="Add to Watchlist"
@@ -184,12 +161,16 @@ export const CoreLayerPair: React.FC = () => {
           body={
             <div className="flex flex-col gap-2">
               <p>
-                The TFStack above shows every TF Core-Layer tracks for this variant.
-                Disabled cards are TFs where the pattern isn't firing. Clicking an active
-                card re-draws the chart for that TF.
+                Each tile above is one timeframe in the chain, deepest at the bottom. The
+                thick candle on the right of every chart is the signal candle — the close
+                that classified this TF. The arrow below it colors the TF's life state:
+                green when the signal just closed (fresh), amber while it's still
+                "breathing" (1/2 or 2/2), gray once steady.
               </p>
               <p>
-                The history timeline is built from real promotion / demotion / anchor
+                Tile borders echo the same signal: green for fresh, yellow-amber for
+                breathing 1/2, darker amber for breathing 2/2, hairline for steady. The
+                history timeline below is built from real promotion / demotion / anchor
                 events — nothing in here is computed on-the-fly, which is why a pair that
                 closed 6h ago still has a clear paper trail.
               </p>

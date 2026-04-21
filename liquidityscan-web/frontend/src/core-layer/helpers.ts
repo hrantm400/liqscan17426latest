@@ -107,10 +107,10 @@ export function deepestTf(chain: TF[]): TF | undefined {
  * Life state for a single TF relative to its last candle close.
  *
  *   - W and 1D: always `steady` (HTF exception, spec line 138)
- *   - 4H / 1H / 15m / 5m:
- *       dt < 1 candle           → fresh
- *       1 candle ≤ dt < 2 candles → breathing
- *       otherwise                 → steady
+ *   - 4H / 1H / 15m / 5m (per ADR D13):
+ *       dt < 1 candle              → fresh      (1-candle window)
+ *       1 candle ≤ dt < 3 candles  → breathing  (2-candle window, covering phases 1 and 2)
+ *       otherwise                  → steady
  *
  * The source of truth is the candle close timestamp, never wall-clock (ADR D14).
  */
@@ -119,8 +119,28 @@ export function computeLifeState(tf: TF, tfLastCandleClose: number, now: number)
   const candleMs = TF_CANDLE_MS[tf];
   const dt = now - tfLastCandleClose;
   if (dt < candleMs) return 'fresh';
-  if (dt < 2 * candleMs) return 'breathing';
+  if (dt < 3 * candleMs) return 'breathing';
   return 'steady';
+}
+
+/**
+ * Sub-phase of the breathing state (1 = first candle after fresh, 2 = second).
+ * Returns `null` when the TF isn't breathing, or when the TF is W/1D (HTF
+ * exception). Consumed by the pair-detail redesign to pick a distinct border
+ * tint per phase — `yellow-amber` for 1/2 and `darker amber` for 2/2 — without
+ * introducing new values into `TFLifeState` itself.
+ */
+export function computeBreathingPhase(
+  tf: TF,
+  tfLastCandleClose: number,
+  now: number,
+): 1 | 2 | null {
+  if (tf === 'W' || tf === '1D') return null;
+  const candleMs = TF_CANDLE_MS[tf];
+  const dt = now - tfLastCandleClose;
+  if (dt >= candleMs && dt < 2 * candleMs) return 1;
+  if (dt >= 2 * candleMs && dt < 3 * candleMs) return 2;
+  return null;
 }
 
 /** Sort a chain into canonical (HTF → LTF) order. */
