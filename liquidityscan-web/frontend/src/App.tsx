@@ -1,6 +1,6 @@
 import { lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, Outlet } from 'react-router-dom';
 import { AnimatePresence } from 'framer-motion';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { HelmetProvider } from 'react-helmet-async';
@@ -15,6 +15,7 @@ import { LaunchPromoBanner } from './components/shared/LaunchPromoBanner';
 import { RequireAuth, GuestOnlyRoute } from './components/auth/AuthRoutes';
 import { ClarityIdentifyBridge } from './hooks/useClarityIdentify';
 import { GaTrackingBridge } from './hooks/useGaTracking';
+import { TierProvider } from './core-layer/TierContext';
 import './index.css';
 
 // Lazy load pages for code splitting
@@ -60,6 +61,19 @@ const Courses = lazy(() => import('./pages/Courses').then(m => ({ default: m.Cou
 const CourseDetail = lazy(() => import('./pages/CourseDetail').then(m => ({ default: m.CourseDetail })));
 const AffiliateDashboard = lazy(() => import('./pages/AffiliateDashboard').then(m => ({ default: m.AffiliateDashboard })));
 
+// Core-Layer pages (Phase 1 mock; real data wiring in Phase 5)
+const CoreLayer = lazy(() => import('./pages/CoreLayer').then(m => ({ default: m.CoreLayer })));
+const CoreLayerVariant = lazy(() => import('./pages/CoreLayerVariant').then(m => ({ default: m.CoreLayerVariant })));
+const CoreLayerPair = lazy(() => import('./pages/CoreLayerPair').then(m => ({ default: m.CoreLayerPair })));
+
+// Outlet wrapper that scopes the mock TierContext to Core-Layer routes.
+// Phase 5 will swap the mock provider for a real useTierGating binding here
+// without touching any other route element.
+const CoreLayerLayout: React.FC = () => (
+  <TierProvider>
+    <Outlet />
+  </TierProvider>
+);
 
 
 const LoadingFallback = () => (
@@ -148,6 +162,13 @@ function AppRoutes() {
             <Route path="subscriptions" element={<AnimatedPage><Subscriptions /></AnimatedPage>} />
             <Route path="affiliate" element={<AnimatedPage><AffiliateDashboard /></AnimatedPage>} />
             <Route path="payment/:id" element={<AnimatedPage><Payment /></AnimatedPage>} />
+
+            {/* Core-Layer — three param-based routes under one TierProvider. */}
+            <Route element={<CoreLayerLayout />}>
+              <Route path="core-layer" element={<AnimatedPage><CoreLayer /></AnimatedPage>} />
+              <Route path="core-layer/:variant" element={<AnimatedPage><CoreLayerVariant /></AnimatedPage>} />
+              <Route path="core-layer/:variant/:pair" element={<AnimatedPage><CoreLayerPair /></AnimatedPage>} />
+            </Route>
           </Route>
           </Route>
 

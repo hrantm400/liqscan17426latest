@@ -5,6 +5,13 @@ export function MobileBottomNav() {
     const location = useLocation();
     const { isAdmin } = useAuthStore();
 
+    // Core-Layer is intentionally NOT surfaced in mobile bottom nav (Phase 1 decision,
+    // see ADR / Phase 1 plan Q2): the bar already carries 4 items plus a "Menu" slot
+    // at 360px, and adding a 5th item shrinks every slot below the text-label
+    // threshold. The "Menu" tab is a direct /profile link, not a real drawer, so
+    // there is no drawer surface to add Core-Layer to either. Mobile users reach
+    // Core-Layer via the "/" command palette (Core-Layer entries added there) or
+    // by opening the sidebar. Revisit in Phase 3 once a real hamburger/drawer exists.
     const navItems = [
         { path: '/dashboard', label: 'Home', icon: 'dashboard' },
         { path: '/monitor/superengulfing', label: 'Scanner', icon: 'candlestick_chart' },
