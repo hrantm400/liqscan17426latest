@@ -28,25 +28,87 @@ async function bootstrap() {
     ? process.env.FRONTEND_URL.split(',').map((url) => url.trim())
     : ['http://localhost:5173'];
 
-  const enableCsp = process.env.HELMET_CSP === 'true';
+  // PR 3.5 — Security headers.
+  //
+  // Three-mode CSP via HELMET_CSP_MODE = off | report-only | enforce.
+  // Legacy HELMET_CSP=true is honoured as 'report-only' for backward
+  // compatibility; set HELMET_CSP_MODE explicitly to override.
+  //
+  // IMPORTANT: browser CSP is enforced on the response that serves the
+  // HTML document, which in prod is nginx, not NestJS. The Helmet CSP
+  // below protects /api/* and /socket.io/* responses. The nginx-served
+  // /index.html carries its own CSP via
+  // /etc/nginx/snippets/liquidityscan-security-headers.conf — keep the
+  // two directive sets in sync. See docs/SECURITY_HEADERS.md.
+  type CspMode = 'off' | 'report-only' | 'enforce';
+  const rawCspMode = process.env.HELMET_CSP_MODE as CspMode | undefined;
+  const legacyCspOn = process.env.HELMET_CSP === 'true';
+  const cspMode: CspMode =
+    rawCspMode === 'off' || rawCspMode === 'report-only' || rawCspMode === 'enforce'
+      ? rawCspMode
+      : legacyCspOn
+        ? 'report-only'
+        : 'off';
+
+  const cspDirectives = {
+    defaultSrc: ["'self'"],
+    scriptSrc: [
+      "'self'",
+      "'unsafe-inline'",
+      'https://accounts.google.com',
+      'https://apis.google.com',
+      'https://www.googletagmanager.com',
+      'https://www.google-analytics.com',
+      'https://www.clarity.ms',
+    ],
+    styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
+    imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
+    fontSrc: ["'self'", 'data:', 'https://fonts.gstatic.com'],
+    connectSrc: [
+      "'self'",
+      'https://liquidityscan.io',
+      'wss://liquidityscan.io',
+      'https://*.ingest.de.sentry.io',
+      'https://accounts.google.com',
+      'https://oauth2.googleapis.com',
+      'https://www.google-analytics.com',
+      'https://region1.google-analytics.com',
+      'https://*.clarity.ms',
+    ],
+    frameSrc: ["'self'", 'https://accounts.google.com'],
+    objectSrc: ["'none'"],
+    baseUri: ["'self'"],
+    formAction: ["'self'"],
+    frameAncestors: ["'none'"],
+    upgradeInsecureRequests: [],
+  };
+
   app.use(
     helmet({
+      // Keep 'cross-origin' (default 'same-origin' can break asset loads
+      // when the frontend and API are served from the same host through
+      // different upstreams). nginx config is the source of truth for
+      // the HTML document's CORP.
       crossOriginResourcePolicy: { policy: 'cross-origin' },
-      contentSecurityPolicy: enableCsp
-        ? {
-            directives: {
-              defaultSrc: ["'self'"],
-              styleSrc: ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
-              scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
-              imgSrc: ["'self'", 'data:', 'https:', 'blob:'],
-              connectSrc: ["'self'", ...allowedOrigins],
-              fontSrc: ["'self'", 'https://fonts.gstatic.com'],
-              frameSrc: ["'self'", 'https://www.youtube.com', 'https://www.youtube-nocookie.com', 'https://fast.wistia.net', 'https://fast.wistia.com'],
-            },
-          }
-        : false,
+      contentSecurityPolicy:
+        cspMode === 'off'
+          ? false
+          : { directives: cspDirectives, reportOnly: cspMode === 'report-only' },
+      hsts: { maxAge: 31536000, includeSubDomains: true, preload: false },
+      referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+      frameguard: { action: 'deny' },
     }),
   );
+
+  // Permissions-Policy is not part of Helmet's built-in header set as of
+  // v8.x — add it manually. Opt out of browser features we don't use.
+  app.use((_req, res, next) => {
+    res.setHeader(
+      'Permissions-Policy',
+      'geolocation=(), microphone=(), camera=(), payment=(), usb=(), accelerometer=(), gyroscope=(), magnetometer=()',
+    );
+    next();
+  });
 
   // Enable CORS - restrict to frontend URL
 
