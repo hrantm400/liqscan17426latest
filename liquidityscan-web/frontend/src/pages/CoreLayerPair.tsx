@@ -19,8 +19,8 @@ import type { CoreLayerHistoryEntry } from '../core-layer/types';
  *
  * The page renders a responsive CSS grid of per-TF charts (one tile per TF in
  * the chain). Each tile owns its own header (TF · life pill · pattern · time),
- * signal-candle highlight, and "Open in TradingView" link. No TFStack — TF
- * metadata lives in the chart headers themselves (Phase 1 redesign).
+ * signal-candle highlight, and "Open in TradingView" link — TF metadata lives
+ * in the chart headers themselves (Phase 1 redesign).
  *
  * Base users attempting to open a Pro-gated pair are intercepted by an
  * `UpgradeModal` in blocking mode. In v1 no pair is Pro-gated because mock

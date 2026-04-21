@@ -14,8 +14,9 @@ export const TF_ORDER: readonly TF[] = ['W', '1D', '4H', '1H', '15m', '5m'];
 
 /**
  * TFs rendered in v1. 15m and 5m exist in the type system but are hidden from
- * `DepthGrid` and `TFStack` until Phase 7 flips the feature flag. Components
- * already support them; iterating this array is the only change required.
+ * `DepthGrid` and the pair-detail chart grid until Phase 7 flips the feature
+ * flag. Components already support them; iterating this array is the only
+ * change required.
  */
 export const VISIBLE_TFS: readonly TF[] = ['W', '1D', '4H', '1H'];
 
