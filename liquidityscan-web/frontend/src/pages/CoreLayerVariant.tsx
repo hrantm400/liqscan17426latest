@@ -7,6 +7,7 @@ import { HowItWorksCollapsible } from '../components/core-layer/HowItWorksCollap
 import { ProLabelPill } from '../components/subscriptions/ProLabelPill';
 import { ViewAsTierToggle } from '../components/core-layer/ViewAsTierToggle';
 import { UpgradeModal } from '../components/core-layer/UpgradeModal';
+import { IntroVideoPill } from '../components/core-layer/IntroVideoPill';
 import { getMockSignalsByVariant } from '../core-layer/mockCoreLayerData';
 import {
   ANCHOR_FROM_URL,
@@ -110,13 +111,13 @@ export const CoreLayerVariant: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-5 pb-10">
-      {/* Phase 2: <IntroVideoPill pageKey="deep-dive" /> */}
       <PageHeader
         breadcrumbs={[
           { label: 'Core-Layer', path: '/core-layer' },
           { label: variantMeta.label },
         ]}
       >
+        <IntroVideoPill pageKey="deep-dive" />
         <ProLabelPill />
         <ViewAsTierToggle />
       </PageHeader>

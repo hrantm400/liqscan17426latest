@@ -8,6 +8,7 @@ import { UpgradeModal, buildVisibleChainString } from '../components/core-layer/
 import { HowItWorksCollapsible } from '../components/core-layer/HowItWorksCollapsible';
 import { ProLabelPill } from '../components/subscriptions/ProLabelPill';
 import { ViewAsTierToggle } from '../components/core-layer/ViewAsTierToggle';
+import { IntroVideoPill } from '../components/core-layer/IntroVideoPill';
 import { getMockSignalByPair } from '../core-layer/mockCoreLayerData';
 import { chainHasProTf } from '../core-layer/helpers';
 import { VARIANT_FROM_SLUG, VARIANT_META, ANCHOR_META } from '../core-layer/constants';
@@ -49,7 +50,6 @@ export const CoreLayerPair: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-5 pb-10">
-      {/* Phase 2: <IntroVideoPill pageKey="pair" /> */}
       <PageHeader
         breadcrumbs={[
           { label: 'Core-Layer', path: '/core-layer' },
@@ -57,6 +57,7 @@ export const CoreLayerPair: React.FC = () => {
           { label: signal.pair },
         ]}
       >
+        <IntroVideoPill pageKey="pair" />
         <ProLabelPill />
         <ViewAsTierToggle />
       </PageHeader>

@@ -1,4 +1,4 @@
-import type { AnchorType, CoreLayerVariant, TF } from './types';
+import type { AnchorType, CoreLayerVariant, IntroVideoPageKey, TF } from './types';
 
 /**
  * Core-Layer — compile-time constants.
@@ -140,3 +140,38 @@ export const LS_KEYS = {
 
 /** Deterministic "now" for Phase 1 mock data. All relative history timestamps use this anchor. */
 export const MOCK_NOW = Date.UTC(2026, 3, 21, 12, 0, 0); // 2026-04-21T12:00:00Z
+
+/** Wistia iframe base URL. Full embed URL = `${WISTIA_IFRAME_BASE}/${mediaId}?autoPlay=true&muted=true`. */
+export const WISTIA_IFRAME_BASE = 'https://fast.wistia.net/embed/iframe';
+
+/**
+ * Per-page Wistia media IDs, sourced from Vite env vars at build time. Empty
+ * string means "no video configured yet" — the pill hides itself entirely
+ * rather than rendering a disabled/coming-soon state.
+ *
+ * Env vars live in `frontend/.env.production` and `.env.development`. The
+ * demo/placeholder ID `29b0fbf547` is Wistia's own public sample clip and
+ * is safe to use for local dev preview.
+ */
+export const INTRO_VIDEO_WISTIA_IDS: Record<IntroVideoPageKey, string> = {
+  overview:
+    (import.meta.env.VITE_CORE_LAYER_INTRO_OVERVIEW_ID as string | undefined) ?? '',
+  'deep-dive':
+    (import.meta.env.VITE_CORE_LAYER_INTRO_DEEPDIVE_ID as string | undefined) ?? '',
+  pair:
+    (import.meta.env.VITE_CORE_LAYER_INTRO_PAIR_ID as string | undefined) ?? '',
+};
+
+/** Per-page localStorage key for the "seen" flag. Maps onto `LS_KEYS` so there is one source of truth. */
+export const INTRO_VIDEO_LS_KEY_BY_PAGE: Record<IntroVideoPageKey, string> = {
+  overview: LS_KEYS.introSeenOverview,
+  'deep-dive': LS_KEYS.introSeenDeepDive,
+  pair: LS_KEYS.introSeenPair,
+};
+
+/** Short copy shown on the pill per page. `md+` shows the full label, `sm` shows icon only. */
+export const INTRO_VIDEO_PILL_LABEL: Record<IntroVideoPageKey, string> = {
+  overview: 'Watch intro · 60s',
+  'deep-dive': 'Watch intro · 90s',
+  pair: 'Watch intro · 60s',
+};

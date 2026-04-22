@@ -5,6 +5,7 @@ import { RecentPromotions } from '../components/core-layer/RecentPromotions';
 import { HowItWorksCollapsible } from '../components/core-layer/HowItWorksCollapsible';
 import { ProLabelPill } from '../components/subscriptions/ProLabelPill';
 import { ViewAsTierToggle } from '../components/core-layer/ViewAsTierToggle';
+import { IntroVideoPill } from '../components/core-layer/IntroVideoPill';
 import {
   MOCK_CORE_LAYER_SIGNALS,
   getMockRecentPromotions,
@@ -22,12 +23,12 @@ export const CoreLayer: React.FC = () => {
 
   return (
     <div className="flex flex-col gap-5 pb-10">
-      {/* Phase 2: <IntroVideoPill pageKey="overview" /> */}
       <PageHeader
         breadcrumbs={[
           { label: 'Core-Layer' },
         ]}
       >
+        <IntroVideoPill pageKey="overview" />
         <ProLabelPill />
         <ViewAsTierToggle />
       </PageHeader>
