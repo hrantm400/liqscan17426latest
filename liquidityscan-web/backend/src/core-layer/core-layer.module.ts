@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { TickerModule } from '../ticker/ticker.module';
 import { CoreLayerController } from './core-layer.controller';
 import { CoreLayerDetectionService } from './core-layer.detection.service';
 import { CoreLayerLifecycleService } from './core-layer.lifecycle.service';
@@ -21,7 +22,7 @@ import { CoreLayerQueryService } from './core-layer.query.service';
  * invoked from the scanner.
  */
 @Module({
-    imports: [PrismaModule],
+    imports: [PrismaModule, TickerModule],
     controllers: [CoreLayerController],
     providers: [CoreLayerDetectionService, CoreLayerLifecycleService, CoreLayerQueryService],
     exports: [CoreLayerDetectionService, CoreLayerLifecycleService, CoreLayerQueryService],

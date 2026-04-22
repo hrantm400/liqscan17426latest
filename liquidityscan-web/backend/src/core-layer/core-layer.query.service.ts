@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { CoreLayerSignal, CoreLayerHistoryEntry, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { TickerCacheService } from '../ticker/ticker-cache.service';
 import {
     AnchorType,
     CoreLayerVariantKey,
@@ -54,7 +55,10 @@ type ListFilters = {
 
 @Injectable()
 export class CoreLayerQueryService {
-    constructor(private readonly prisma: PrismaService) {}
+    constructor(
+        private readonly prisma: PrismaService,
+        private readonly ticker: TickerCacheService,
+    ) {}
 
     /** Public so the controller can short-circuit when the flag is off. */
     isEnabled(): boolean {
@@ -186,6 +190,12 @@ export class CoreLayerQueryService {
             }
         }
 
+        // Read-time ticker enrichment (Phase 5.1). Cache miss — pair not on
+        // Binance Futures, or cache never successfully seeded — falls back to
+        // 0/0, which the frontend renders as "—" via the existing placeholder
+        // fallback (SignalCard.hasTicker, CoreLayerPair.priceDisplay).
+        const tick = this.ticker.get(row.pair);
+
         return {
             id: row.id,
             pair: row.pair,
@@ -199,9 +209,8 @@ export class CoreLayerQueryService {
             tfLastCandleClose: storedCloses,
             sePerTf: (row.sePerTf as Partial<Record<Tf, SePatternKind>> | null) ?? undefined,
             plusSummary: (row.plusSummary as PlusSummary | null) ?? undefined,
-            // Phase 4 placeholders — ticker enrichment happens in Phase 5.
-            price: 0,
-            change24h: 0,
+            price: tick?.price ?? 0,
+            change24h: tick?.change24h ?? 0,
             detectedAt: row.detectedAt.getTime(),
             lastPromotedAt: row.lastPromotedAt.getTime(),
             status: row.status as 'ACTIVE' | 'CLOSED',

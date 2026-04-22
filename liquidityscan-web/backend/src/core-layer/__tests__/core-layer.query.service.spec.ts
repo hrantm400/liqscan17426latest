@@ -12,9 +12,25 @@ jest.mock('../core-layer.feature-flag', () => ({
 import { CoreLayerQueryService } from '../core-layer.query.service';
 import { TF_CANDLE_MS } from '../core-layer.constants';
 import { FakePrismaService } from './fake-prisma';
+import type { ITicker24h } from '../../providers/data-provider.interface';
+
+/** Minimal in-memory stand-in for TickerCacheService used by the query path. */
+class FakeTickerCache {
+    private map = new Map<string, ITicker24h>();
+    set(symbol: string, ticker: ITicker24h): void {
+        this.map.set(symbol, ticker);
+    }
+    clear(): void {
+        this.map.clear();
+    }
+    get(symbol: string): ITicker24h | null {
+        return this.map.get(symbol) ?? null;
+    }
+}
 
 describe('CoreLayerQueryService', () => {
     let prisma: FakePrismaService;
+    let ticker: FakeTickerCache;
     let service: CoreLayerQueryService;
     const now = Date.UTC(2026, 3, 22, 12, 0, 0);
 
@@ -28,7 +44,8 @@ describe('CoreLayerQueryService', () => {
 
     beforeEach(() => {
         prisma = new FakePrismaService();
-        service = new CoreLayerQueryService(prisma as any);
+        ticker = new FakeTickerCache();
+        service = new CoreLayerQueryService(prisma as any, ticker as any);
         mockFlag.value = true;
     });
 
@@ -179,6 +196,35 @@ describe('CoreLayerQueryService', () => {
             expect(s.byDepth['2']).toBe(2);
             expect(s.byDepth['3']).toBe(1);
             expect(s.byDepth['4']).toBeUndefined();
+        });
+    });
+
+    describe('ticker enrichment', () => {
+        it('populates price and change24h from the ticker cache when available', async () => {
+            seedSignal({ id: 'btc', pair: 'BTCUSDT' });
+            ticker.set('BTCUSDT', { price: 70_000.5, change24h: 1.23 });
+
+            const res = await service.listSignals({});
+            expect(res.signals[0].price).toBe(70_000.5);
+            expect(res.signals[0].change24h).toBe(1.23);
+        });
+
+        it('falls back to 0 placeholders on cache miss', async () => {
+            seedSignal({ id: 'obscure', pair: 'NOSUCHUSDT' });
+
+            const res = await service.listSignals({});
+            expect(res.signals[0].price).toBe(0);
+            expect(res.signals[0].change24h).toBe(0);
+        });
+
+        it('enriches getSignalById responses too', async () => {
+            seedSignal({ id: 'eth', pair: 'ETHUSDT' });
+            ticker.set('ETHUSDT', { price: 3_456.78, change24h: -0.42 });
+
+            const dto = await service.getSignalById('eth');
+            expect(dto).not.toBeNull();
+            expect(dto!.price).toBe(3_456.78);
+            expect(dto!.change24h).toBe(-0.42);
         });
     });
 });
