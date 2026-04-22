@@ -11,7 +11,7 @@ import {
   UseGuards,
   Req,
 } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { UserTier } from '@prisma/client';
 import { AdminService } from './admin.service';
 import { AdminGuard } from './guards/admin.guard';
@@ -248,13 +248,25 @@ export class AdminController {
   // read and gets a wider 60/60s window because the admin UI polls it
   // on a 10-second interval when the card is open.
 
+  // Phase 5b hotfix — the global `burst` throttler (5 req / 5 min) and
+  // the globally-registered `default` (120/60s) + `strict` (10/60s)
+  // all evaluate per-request by default; any one of them firing
+  // returns 429. The card polls stats every 10 s (≈30 req / 5 min),
+  // which immediately trips `burst`. Mirror the CoreLayerController
+  // hotfix pattern: skip burst + default, keep a per-route `strict`
+  // override wide enough for polling + a manual refresh. Same reasoning
+  // applies to the toggle and force-rescan, which are rare but sit
+  // behind the same three globals.
+
   @Get('core-layer/stats')
+  @SkipThrottle({ default: true, burst: true })
   @Throttle({ strict: { limit: 60, ttl: 60000 } })
   async getCoreLayerStats() {
     return this.coreLayerAdmin.getStats();
   }
 
   @Post('core-layer/enabled')
+  @SkipThrottle({ default: true, burst: true })
   @Throttle({ strict: { limit: 10, ttl: 60000 } })
   async setCoreLayerEnabled(
     @Body() body: SetCoreLayerEnabledDto,
@@ -269,6 +281,7 @@ export class AdminController {
   // upstream signals, and hammering it would just re-run work. 3/60s
   // is enough for "toggle, wait, retry" without being accidentally
   // destructive.
+  @SkipThrottle({ default: true, burst: true })
   @Throttle({ strict: { limit: 3, ttl: 60000 } })
   async forceCoreLayerRescan() {
     return this.coreLayerAdmin.forceRescan();
