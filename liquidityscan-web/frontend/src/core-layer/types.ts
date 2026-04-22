@@ -34,6 +34,9 @@ export type PlusSummary = 'all' | 'dominant' | 'none';
 
 export type CoreLayerStatus = 'ACTIVE' | 'CLOSED';
 
+/** Which Core-Layer page an intro video belongs to. Keys match LS_KEYS + env-var map in constants.ts. */
+export type IntroVideoPageKey = 'overview' | 'deep-dive' | 'pair';
+
 export interface CoreLayerHistoryEntry {
   at: number;
   event: 'created' | 'promoted' | 'demoted' | 'anchor_changed' | 'closed';
