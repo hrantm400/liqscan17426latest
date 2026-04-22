@@ -163,6 +163,27 @@ describe('AuthController (PR 3.1 — httpOnly refresh cookie)', () => {
     });
   });
 
+  describe('getProfile (GET /auth/me) — PR 3.5c', () => {
+    it('applies Cache-Control: no-store and Pragma: no-cache via @Header to block 304 revalidation', () => {
+      // The default Express ETag generator was causing /auth/me to 304 on
+      // page refresh, which the frontend treated as "not authenticated".
+      // These two headers are authoritative per RFC 9111: the UA must not
+      // cache or revalidate, so If-None-Match never gets sent on the next
+      // call and the 304 path is unreachable from the browser.
+      const headers = Reflect.getMetadata(
+        '__headers__',
+        AuthController.prototype.getProfile,
+      );
+      expect(headers).toBeDefined();
+      expect(headers).toEqual(
+        expect.arrayContaining([
+          { name: 'Cache-Control', value: 'no-store' },
+          { name: 'Pragma', value: 'no-cache' },
+        ]),
+      );
+    });
+  });
+
   describe('oauth/exchange + google/one-tap', () => {
     it('oauthExchange sets rt cookie on success', async () => {
       const svc = makeAuthServiceMock({

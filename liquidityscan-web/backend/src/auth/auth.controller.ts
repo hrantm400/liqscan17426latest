@@ -3,6 +3,7 @@ import {
   Post,
   Get,
   HttpCode,
+  Header,
   Body,
   UseGuards,
   Req,
@@ -164,7 +165,16 @@ export class AuthController {
 
 
 
+  // PR 3.5c — disable HTTP cache on /auth/me so the browser never revalidates
+  // this endpoint. Default Express ETag generation was causing 304 Not Modified
+  // responses with empty bodies on page refresh, which the frontend fetch
+  // layer interpreted as "not authenticated" and kicked the user back to
+  // /login. Cache-Control: no-store is authoritative per RFC 9111 — the UA
+  // MUST NOT store the response, so If-None-Match is never sent on the next
+  // call. Pragma: no-cache covers any HTTP/1.0 intermediary.
   @Get('me')
+  @Header('Cache-Control', 'no-store')
+  @Header('Pragma', 'no-cache')
   async getProfile(@Req() req: any) {
     return this.authService.validateUser(req.user.userId);
   }
