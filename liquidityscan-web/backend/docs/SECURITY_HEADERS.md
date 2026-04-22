@@ -63,7 +63,7 @@ connect-src 'self'
   https://accounts.google.com https://oauth2.googleapis.com
   https://www.google-analytics.com https://region1.google-analytics.com
   https://*.clarity.ms;
-frame-src 'self' https://accounts.google.com;
+frame-src 'self' https://accounts.google.com https://fast.wistia.net;
 object-src 'none';
 base-uri 'self';
 form-action 'self';
@@ -88,6 +88,15 @@ upgrade-insecure-requests
 - `*.ingest.de.sentry.io` — Sentry frontend DSN host (PR 3.2).
 - `fonts.googleapis.com`, `fonts.gstatic.com` — Google Fonts imported
   from `frontend/src/index.css`.
+- `fast.wistia.net` — Wistia iframe player origin. Embed URL is
+  `https://fast.wistia.net/embed/iframe/{mediaId}`, used by the Courses
+  feature (`frontend/src/pages/CourseDetail.tsx`, `admin/AdminCourseDetail.tsx`)
+  and by the Phase 2 Core-Layer intro-video pill. Iframe-embed only — the
+  Wistia JS SDK (`fast.wistia.com/assets/external/E-v1.js`) is
+  intentionally not used, so `script-src` stays unchanged. Internal
+  subresource loads inside the iframe (`embed-ssl.wistia.com`,
+  `embedwistia-a.akamaihd.net`, `distillery.wistia.com`) are governed by
+  Wistia's own CSP on the iframe document, not by this parent CSP.
 - `wss://liquidityscan.io` — Socket.IO transport. `'self'` matches
   `https://liquidityscan.io` but NOT `wss://`, so it must be listed
   explicitly.
@@ -269,10 +278,10 @@ add_header Cross-Origin-Resource-Policy "cross-origin" always;
 add_header Origin-Agent-Cluster "?1" always;
 
 # Stage 1 — Report-Only (active now).
-add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com https://www.googletagmanager.com https://www.google-analytics.com https://*.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; img-src 'self' data: https: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://liquidityscan.io wss://liquidityscan.io https://*.ingest.de.sentry.io https://accounts.google.com https://oauth2.googleapis.com https://www.google-analytics.com https://region1.google-analytics.com https://*.clarity.ms; frame-src 'self' https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests" always;
+add_header Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com https://www.googletagmanager.com https://www.google-analytics.com https://*.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; img-src 'self' data: https: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://liquidityscan.io wss://liquidityscan.io https://*.ingest.de.sentry.io https://accounts.google.com https://oauth2.googleapis.com https://www.google-analytics.com https://region1.google-analytics.com https://*.clarity.ms; frame-src 'self' https://accounts.google.com https://fast.wistia.net; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests" always;
 
 # Stage 2 — Enforcing (flip: comment the Report-Only line above, uncomment below).
-# add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com https://www.googletagmanager.com https://www.google-analytics.com https://*.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; img-src 'self' data: https: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://liquidityscan.io wss://liquidityscan.io https://*.ingest.de.sentry.io https://accounts.google.com https://oauth2.googleapis.com https://www.google-analytics.com https://region1.google-analytics.com https://*.clarity.ms; frame-src 'self' https://accounts.google.com; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests" always;
+# add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' https://accounts.google.com https://apis.google.com https://www.googletagmanager.com https://www.google-analytics.com https://*.clarity.ms; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; img-src 'self' data: https: blob:; font-src 'self' data: https://fonts.gstatic.com; connect-src 'self' https://liquidityscan.io wss://liquidityscan.io https://*.ingest.de.sentry.io https://accounts.google.com https://oauth2.googleapis.com https://www.google-analytics.com https://region1.google-analytics.com https://*.clarity.ms; frame-src 'self' https://accounts.google.com https://fast.wistia.net; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests" always;
 ```
 
 ## Site config edits
@@ -373,6 +382,54 @@ violations observed. Vite production build does not use runtime
 
 After patching 2 and 3 and toggling CF Browser Insights off, the 24h
 Stage 1 observation window was restarted.
+
+### Pre-Stage-2 fix — Wistia iframe player (Courses + Phase 2 Core-Layer)
+
+**Found during Phase 2 Core-Layer concretization (Wistia was picked as the
+intro-video host).** The Courses feature already ships a Wistia iframe
+player (`CourseDetail.tsx` line 50: `embedUrl =
+https://fast.wistia.net/embed/iframe/{wistiaId}`), but neither
+`fast.wistia.net` nor any other Wistia origin was ever added to `frame-src`
+in either CSP layer.
+
+Because prod is still in Stage 1 Report-Only, the gap surfaces only as a
+CSP violation in the browser console (not a broken iframe) — the iframe
+still loads. When Stage 2 enforcing is flipped the CSP would block the
+iframe from loading.
+
+**Resolution:** added `https://fast.wistia.net` to `frame-src` in both
+layers (Helmet `main.ts` + nginx snippet text in this doc). Server-side
+nginx snippet at `/etc/nginx/snippets/liquidityscan-security-headers.conf`
+must be updated out-of-band using the same apply-runbook as PR 3.5:
+
+```bash
+sudo nano /etc/nginx/snippets/liquidityscan-security-headers.conf
+#   replace both Report-Only and Enforcing frame-src lines to include
+#   `https://fast.wistia.net` as shown in this doc's "nginx snippet" section.
+sudo nginx -t && sudo systemctl reload nginx
+```
+
+No Stage 1 observation restart required — the change only widens an
+existing directive; it does not add new headers, new directives, or new
+enforcement. Verify post-deploy:
+
+```bash
+curl -sI https://liquidityscan.io/ | grep -i 'content-security-policy' | grep fast.wistia.net
+```
+
+**Scope notes:**
+- Iframe embed only (no Wistia JS SDK) — `script-src` intentionally
+  unchanged. If a future lesson needs SDK-level control (programmatic
+  play/pause, chapter markers, player events), add
+  `https://fast.wistia.com` to `script-src` as its own entry in this log
+  before the change, not silently bundled into a feature PR.
+- Internal Wistia subresources (`embed-ssl.wistia.com`,
+  `embedwistia-a.akamaihd.net`, `distillery.wistia.com` for analytics
+  beacons) are governed by Wistia's own CSP on the iframe document and do
+  not need to be allowlisted here.
+- `img-src` already allows `https:` broadly, so Wistia thumbnails / poster
+  images that might be rendered outside the iframe (e.g. a hover preview
+  on the intro-video pill) are already covered.
 
 ## Out of scope
 
