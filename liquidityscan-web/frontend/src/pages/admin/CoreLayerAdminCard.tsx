@@ -97,6 +97,7 @@ export function CoreLayerAdminCard() {
                 <StatusPill
                     enabled={Boolean(runtime?.enabled)}
                     loading={statsQuery.isLoading}
+                    unknown={!runtime && !statsQuery.isLoading}
                 />
             </div>
 
@@ -111,7 +112,18 @@ export function CoreLayerAdminCard() {
                     type="checkbox"
                     className="w-5 h-5 rounded border dark:border-white/20 light:border-slate-300 accent-primary"
                     checked={Boolean(runtime?.enabled)}
-                    disabled={toggleMutation.isPending || statsQuery.isLoading}
+                    // Disable the toggle when stats is loading OR in error.
+                    // Otherwise an unchecked box during a failed stats fetch
+                    // would misrepresent the true AppConfig state (e.g. a
+                    // 429 would make the UI look DISABLED while detection
+                    // is in fact running), and a click would send the
+                    // opposite value to the server.
+                    disabled={
+                        toggleMutation.isPending ||
+                        statsQuery.isLoading ||
+                        statsQuery.isError ||
+                        !runtime
+                    }
                     onChange={(e) => toggleMutation.mutate(e.target.checked)}
                 />
                 <span className="dark:text-white light:text-text-dark font-semibold">
@@ -213,14 +225,25 @@ export function CoreLayerAdminCard() {
 function StatusPill({
     enabled,
     loading,
+    unknown,
 }: {
     enabled: boolean;
     loading: boolean;
+    unknown: boolean;
 }) {
     if (loading) {
         return (
             <span className="text-xs px-2 py-1 rounded-full bg-slate-500/20 text-slate-300">
                 Loading…
+            </span>
+        );
+    }
+    // Distinct UNKNOWN state when stats failed to load — avoids claiming
+    // DISABLED when we actually just couldn't reach the endpoint.
+    if (unknown) {
+        return (
+            <span className="text-xs px-2 py-1 rounded-full bg-amber-500/20 text-amber-300">
+                UNKNOWN
             </span>
         );
     }
