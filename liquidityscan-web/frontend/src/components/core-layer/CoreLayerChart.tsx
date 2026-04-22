@@ -1,6 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { AnimatePresence, motion } from 'framer-motion';
+import { createChart, ColorType, type Time } from 'lightweight-charts';
+import { useTheme } from '../../contexts/ThemeContext';
 import { fetchCandles, type ChartCandle } from '../../services/candles';
 import type { Direction, TF, TFLifeState } from '../../core-layer/types';
 
@@ -11,18 +12,19 @@ interface CoreLayerChartProps {
   /**
    * Close-time of the signal candle on this TF (epoch ms) — the last
    * aligned candle that Core-Layer considers definitive on this TF.
-   * Used to highlight the matching bar in the mini chart. When null/undefined,
-   * the last rendered candle is highlighted as a fallback.
+   * Used to pin a highlight marker on the matching bar.
    */
   signalCloseMs?: number | null;
-  /** Chart body height in pixels. Default 140. */
-  height?: number;
   /**
-   * Life state for the highlight color: `fresh` → primary green,
-   * `breathing` → amber, `steady` → muted. Defaults to `steady`.
+   * Life state for the marker color: `fresh` → green, `breathing` → amber,
+   * `steady` → muted gray. Defaults to `steady`.
    */
   lifeState?: TFLifeState;
-  /** Max candles rendered. Default 40, clipped to whatever the API returns. */
+  /**
+   * Max candles fetched. The chart keeps a `context + signal + tail`
+   * window of ~15 bars by default — 7 before, signal, 7 after (or the
+   * last 15 total if no signal is identified).
+   */
   candleCount?: number;
   className?: string;
 }
@@ -45,36 +47,47 @@ const TF_INTERVAL_MS: Record<TF, number> = {
   '5m': 5 * 60 * 1000,
 };
 
-const HIGHLIGHT_COLOR: Record<TFLifeState, string> = {
+const MARKER_COLOR: Record<TFLifeState, string> = {
   fresh: '#13ec37',
   breathing: '#f59e0b',
   steady: '#9ca3af',
 };
 
+const UP_COLOR = '#13ec37';
+const DOWN_COLOR = '#ff4444';
+
 /**
- * Real-data candlestick mini-chart for Core-Layer pair-detail tiles.
+ * Interactive candlestick mini-chart for Core-Layer pair-detail tiles,
+ * built on `lightweight-charts` (same engine as the full InteractiveLiveChart
+ * on SignalDetails) but scoped to ~15 bars for a compact at-a-glance view.
  *
- * Visually mirrors `StaticMiniChart` (the component the signal scanners
- * use on Monitor* pages) so the pair-detail grid feels native alongside
- * the rest of the product, rather than the old deterministic-PRNG SVG.
+ * Behaviour:
+ *  - Fetches 30 recent real candles via `fetchCandles(pair, TF→interval)`,
+ *    cached per (pair, tf) by TanStack Query.
+ *  - Renders the 7-before / signal / ~7-after window centered on the
+ *    signal candle (or the last 15 candles when no signal is identified).
+ *  - User can pan (drag) and zoom (wheel / pinch) within the fetched
+ *    window. Auto-resizes to its flex-sized container.
+ *  - A colored arrow marker is pinned on the signal candle, colored by
+ *    life-state; signal candle itself uses `direction` color (BUY green,
+ *    SELL red) versus the muted up/down for context candles.
  *
- * Candles are fetched once per (pair, tf) pair via `fetchCandles` and
- * cached by TanStack Query. The signal candle — identified by matching
- * the backend-supplied close timestamp against candle open-time — is
- * highlighted with a thicker body, brighter directional color, and a
- * dashed guide. Life state drives the guide color.
+ * No overlays (no entry / SL / TP) per ADR D6 — Core-Layer is not a trade
+ * signal, just an alignment surface.
  */
 export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
   pair,
   tf,
   direction,
   signalCloseMs = null,
-  height = 140,
   lifeState = 'steady',
-  candleCount = 40,
+  candleCount = 30,
   className = '',
 }) => {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const interval = TF_TO_INTERVAL[tf];
+
   const query = useQuery({
     queryKey: ['core-layer-chart', pair, interval, candleCount],
     queryFn: () => fetchCandles(pair, interval, candleCount),
@@ -83,46 +96,50 @@ export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
     refetchOnWindowFocus: false,
   });
 
-  const candles = query.data ?? [];
-  const isLong = direction === 'BUY';
-  const highlightColor = HIGHLIGHT_COLOR[lifeState];
+  const { windowCandles, signalIdx } = useMemo(() => {
+    const raw = query.data ?? [];
+    if (raw.length === 0) return { windowCandles: [], signalIdx: -1 };
 
-  if (query.isLoading) {
-    return (
-      <div
-        className={`rounded-lg dark:bg-black/20 light:bg-white/80 flex items-center justify-center ${className}`}
-        style={{ height }}
-      >
-        <div className="w-10 h-10 rounded-full border-2 border-primary/20 border-t-primary/60 animate-spin" />
-      </div>
-    );
-  }
+    let sig = -1;
+    if (signalCloseMs != null) {
+      const intervalMs = TF_INTERVAL_MS[tf];
+      const targetOpen = signalCloseMs - intervalMs;
+      const tol = intervalMs / 2;
+      for (let i = 0; i < raw.length; i++) {
+        const t = new Date(raw[i].openTime).getTime();
+        if (Math.abs(t - targetOpen) <= tol) {
+          sig = i;
+          break;
+        }
+      }
+    }
 
-  if (candles.length === 0) {
-    return (
-      <div
-        className={`rounded-lg dark:bg-black/20 light:bg-white/80 flex items-center justify-center gap-2 ${className}`}
-        style={{ height }}
-      >
-        <span className="material-symbols-outlined text-2xl dark:text-gray-600 light:text-slate-400">
-          show_chart
-        </span>
-        <span className="text-[11px] font-mono dark:text-gray-500 light:text-slate-400">
-          No candles yet
-        </span>
-      </div>
-    );
-  }
+    // 7 before + signal + 7 after = 15-bar window. Clamp to array bounds.
+    const WINDOW = 15;
+    const HALF = 7;
+    let start: number;
+    let end: number;
+    if (sig >= 0) {
+      start = Math.max(0, sig - HALF);
+      end = Math.min(raw.length, start + WINDOW);
+      start = Math.max(0, end - WINDOW);
+    } else {
+      end = raw.length;
+      start = Math.max(0, end - WINDOW);
+    }
+    const slice = raw.slice(start, end);
+    const sigInSlice = sig >= 0 ? sig - start : -1;
+    return { windowCandles: slice, signalIdx: sigInSlice };
+  }, [query.data, signalCloseMs, tf]);
 
   return (
     <ChartBody
-      candles={candles}
-      pair={pair}
-      tf={tf}
-      isLong={isLong}
-      signalCloseMs={signalCloseMs}
-      highlightColor={highlightColor}
-      height={height}
+      candles={windowCandles}
+      signalIdx={signalIdx}
+      isDark={isDark}
+      isLong={direction === 'BUY'}
+      markerColor={MARKER_COLOR[lifeState]}
+      loading={query.isLoading}
       className={className}
     />
   );
@@ -130,174 +147,208 @@ export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
 
 interface ChartBodyProps {
   candles: ChartCandle[];
-  pair: string;
-  tf: TF;
+  signalIdx: number;
+  isDark: boolean;
   isLong: boolean;
-  signalCloseMs: number | null;
-  highlightColor: string;
-  height: number;
+  markerColor: string;
+  loading: boolean;
   className: string;
 }
 
 const ChartBody: React.FC<ChartBodyProps> = ({
   candles,
-  pair,
-  tf,
+  signalIdx,
+  isDark,
   isLong,
-  signalCloseMs,
-  highlightColor,
-  height,
+  markerColor,
+  loading,
   className,
 }) => {
-  const [hovered, setHovered] = useState(false);
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
+  const seriesRef = useRef<any>(null);
 
-  const { displayCandles, signalIdx, min, max } = useMemo(() => {
-    const slice = candles.slice(-40);
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
 
-    let sigIdx = -1;
-    if (signalCloseMs != null) {
-      const intervalMs = TF_INTERVAL_MS[tf];
-      const targetOpen = signalCloseMs - intervalMs;
-      // Allow a half-interval tolerance — backend close-time is off by ±1
-      // candle in rare clock-skew cases.
-      const tolerance = intervalMs / 2;
-      for (let i = 0; i < slice.length; i++) {
-        const t = new Date(slice[i].openTime).getTime();
-        if (Math.abs(t - targetOpen) <= tolerance) {
-          sigIdx = i;
-          break;
-        }
+    const chart = createChart(container, {
+      layout: {
+        background: { type: ColorType.Solid, color: 'transparent' },
+        textColor: isDark ? '#9ca3af' : '#64748b',
+        fontSize: 10,
+        fontFamily:
+          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
+        attributionLogo: false,
+      },
+      grid: {
+        vertLines: {
+          color: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)',
+          style: 1,
+          visible: true,
+        },
+        horzLines: {
+          color: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)',
+          style: 1,
+          visible: true,
+        },
+      },
+      width: container.clientWidth || 240,
+      height: container.clientHeight || 200,
+      timeScale: {
+        timeVisible: true,
+        secondsVisible: false,
+        borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
+        rightOffset: 2,
+        barSpacing: 10,
+        minBarSpacing: 4,
+      },
+      rightPriceScale: {
+        borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
+        scaleMargins: { top: 0.12, bottom: 0.12 },
+      },
+      crosshair: {
+        mode: 1,
+        vertLine: {
+          color: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)',
+          width: 1,
+          style: 1,
+          labelBackgroundColor: '#13ec37',
+        },
+        horzLine: {
+          color: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)',
+          width: 1,
+          style: 1,
+          labelBackgroundColor: '#13ec37',
+        },
+      },
+      handleScroll: {
+        mouseWheel: true,
+        pressedMouseMove: true,
+        horzTouchDrag: true,
+        vertTouchDrag: false,
+      },
+      handleScale: {
+        mouseWheel: true,
+        pinch: true,
+        axisPressedMouseMove: true,
+      },
+    });
+
+    const series = chart.addCandlestickSeries({
+      upColor: UP_COLOR,
+      downColor: DOWN_COLOR,
+      borderVisible: false,
+      wickUpColor: UP_COLOR,
+      wickDownColor: DOWN_COLOR,
+    });
+
+    chartRef.current = chart;
+    seriesRef.current = series;
+
+    const ro = new ResizeObserver(() => {
+      if (!chartRef.current || !containerRef.current) return;
+      const w = containerRef.current.clientWidth;
+      const h = containerRef.current.clientHeight;
+      if (w > 0 && h > 0) {
+        chartRef.current.applyOptions({ width: w, height: h });
+      }
+    });
+    ro.observe(container);
+
+    return () => {
+      try {
+        ro.disconnect();
+      } catch {
+        /* ignore */
+      }
+      try {
+        chart.remove();
+      } catch {
+        /* ignore */
+      }
+      chartRef.current = null;
+      seriesRef.current = null;
+    };
+  }, [isDark]);
+
+  useEffect(() => {
+    const series = seriesRef.current;
+    const chart = chartRef.current;
+    if (!series || !chart) return;
+    if (candles.length === 0) {
+      try {
+        series.setData([]);
+        series.setMarkers([]);
+      } catch {
+        /* ignore */
+      }
+      return;
+    }
+
+    const data = candles.map((c) => ({
+      time: (Math.floor(new Date(c.openTime).getTime() / 1000) as unknown) as Time,
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }));
+
+    try {
+      series.setData(data);
+    } catch {
+      /* ignore */
+    }
+
+    if (signalIdx >= 0 && signalIdx < data.length) {
+      const marker = {
+        time: data[signalIdx].time,
+        position: isLong ? ('belowBar' as const) : ('aboveBar' as const),
+        color: markerColor,
+        shape: (isLong ? 'arrowUp' : 'arrowDown') as 'arrowUp' | 'arrowDown',
+        text: 'SIGNAL',
+        size: 1.2,
+      };
+      try {
+        series.setMarkers([marker]);
+      } catch {
+        /* ignore */
+      }
+    } else {
+      try {
+        series.setMarkers([]);
+      } catch {
+        /* ignore */
       }
     }
-    if (sigIdx === -1) sigIdx = slice.length - 1;
 
-    let mn = Infinity;
-    let mx = -Infinity;
-    for (const c of slice) {
-      if (c.low < mn) mn = c.low;
-      if (c.high > mx) mx = c.high;
+    try {
+      chart.timeScale().fitContent();
+    } catch {
+      /* ignore */
     }
-    const pad = (mx - mn) * 0.08 || 1;
-    return {
-      displayCandles: slice,
-      signalIdx: sigIdx,
-      min: mn - pad,
-      max: mx + pad,
-    };
-  }, [candles, tf, signalCloseMs]);
-
-  const padding = 4;
-  const bodyW = 5;
-  const slot = bodyW + 2;
-  const signalBodyW = 8;
-  const chartW = padding * 2 + displayCandles.length * slot;
-  const chartH = height - 8;
-  const priceRange = max - min || 1;
-
-  const upColor = '#13ec37';
-  const downColor = '#ff4444';
-
-  const scaleY = (p: number) =>
-    padding + ((max - p) / priceRange) * (chartH - padding * 2);
+  }, [candles, signalIdx, isLong, markerColor]);
 
   return (
     <div
-      className={`relative w-full flex items-center justify-center dark:bg-black/20 light:bg-white/80 rounded-lg overflow-hidden ${className}`}
-      style={{ height }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      className={`relative w-full h-full flex-1 min-h-[160px] rounded-lg overflow-hidden dark:bg-black/20 light:bg-white/80 ${className}`}
     >
-      <svg
-        width="100%"
-        height={chartH}
-        viewBox={`0 0 ${chartW} ${chartH}`}
-        preserveAspectRatio="xMidYMid meet"
-        className="w-full h-full"
-      >
-        {signalIdx >= 0 && (
-          <line
-            x1={padding + signalIdx * slot + bodyW / 2}
-            x2={padding + signalIdx * slot + bodyW / 2}
-            y1={padding}
-            y2={chartH - padding}
-            stroke={highlightColor}
-            strokeWidth={0.8}
-            strokeDasharray="2,3"
-            opacity={0.45}
-          />
-        )}
-        {displayCandles.map((c, i) => {
-          const x = padding + i * slot + bodyW / 2;
-          const isSignal = i === signalIdx;
-          const bullish = c.close >= c.open;
-          const bodyTop = Math.min(scaleY(c.open), scaleY(c.close));
-          const bodyBottom = Math.max(scaleY(c.open), scaleY(c.close));
-          const bodyHeight = Math.max(1, bodyBottom - bodyTop);
-          const baseColor = bullish ? upColor : downColor;
-          const color = isSignal
-            ? isLong
-              ? upColor
-              : downColor
-            : baseColor;
-          const width = isSignal ? signalBodyW : bodyW;
-          const opacity = isSignal ? 1 : 0.85;
-
-          return (
-            <g key={i}>
-              <line
-                x1={x}
-                y1={scaleY(c.high)}
-                x2={x}
-                y2={scaleY(c.low)}
-                stroke={color}
-                strokeWidth={isSignal ? 1.5 : 1}
-                opacity={opacity}
-              />
-              <rect
-                x={x - width / 2}
-                y={bodyTop}
-                width={width}
-                height={bodyHeight}
-                fill={color}
-                opacity={opacity}
-              />
-              {isSignal && (
-                <rect
-                  x={x - width / 2 - 1}
-                  y={bodyTop - 1}
-                  width={width + 2}
-                  height={bodyHeight + 2}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={1}
-                  opacity={0.35}
-                  rx={1}
-                />
-              )}
-            </g>
-          );
-        })}
-      </svg>
-
-      <AnimatePresence>
-        {hovered && (
-          <motion.div
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 5 }}
-            className="absolute top-2 right-2 dark:bg-black/80 light:bg-white/90 text-[10px] font-mono font-bold px-2 py-1 rounded backdrop-blur-sm border dark:border-white/10 light:border-green-300 z-20 pointer-events-none drop-shadow-md flex items-center gap-1.5"
-          >
-            <span
-              className={`w-1.5 h-1.5 rounded-full ${
-                isLong ? 'bg-[#13ec37]' : 'bg-[#ff4444]'
-              } animate-pulse`}
-            />
-            <span className="dark:text-gray-300 light:text-slate-600">
-              {pair} · {tf} · {displayCandles.length} candles
-            </span>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div ref={containerRef} className="absolute inset-0" />
+      {loading && candles.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-full border-2 border-primary/20 border-t-primary/60 animate-spin" />
+        </div>
+      )}
+      {!loading && candles.length === 0 && (
+        <div className="absolute inset-0 flex items-center justify-center gap-2">
+          <span className="material-symbols-outlined text-2xl dark:text-gray-600 light:text-slate-400">
+            show_chart
+          </span>
+          <span className="text-[11px] font-mono dark:text-gray-500 light:text-slate-400">
+            No candles yet
+          </span>
+        </div>
+      )}
     </div>
   );
 };

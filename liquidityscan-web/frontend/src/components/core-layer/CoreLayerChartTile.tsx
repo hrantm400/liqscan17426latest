@@ -39,7 +39,7 @@ interface Props {
  * (the one whose close matches `signal.tfLastCandleClose[tf]`) is
  * highlighted so the viewer can see where the alignment fired.
  */
-export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 40, now = MOCK_NOW }) => {
+export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 30, now = MOCK_NOW }) => {
   const state: TFLifeState = signal.tfLifeState[tf] ?? 'steady';
   const tfClose = signal.tfLastCandleClose[tf] ?? now;
   const phase = computeBreathingPhase(tf, tfClose, now);
@@ -49,12 +49,12 @@ export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 
 
   return (
     <div
-      className={`rounded-xl p-3 flex flex-col gap-2 dark:bg-black/30 light:bg-white/90 ${borderClass(
+      className={`aspect-square rounded-xl p-3 flex flex-col gap-2 dark:bg-black/30 light:bg-white/90 ${borderClass(
         state,
         phase,
       )}`}
     >
-      <header className="flex items-center justify-between gap-2 min-w-0">
+      <header className="flex items-center justify-between gap-2 min-w-0 shrink-0">
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
           <span className="text-[13px] font-black dark:text-white light:text-slate-900 font-mono">
             {tf}
@@ -71,17 +71,21 @@ export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 
         </span>
       </header>
 
-      <CoreLayerChart
-        pair={signal.pair}
-        tf={tf}
-        direction={signal.direction}
-        signalCloseMs={signal.tfLastCandleClose[tf] ?? null}
-        candleCount={candleCount}
-        lifeState={state}
-      />
+      <div className="flex-1 min-h-0 relative">
+        <CoreLayerChart
+          pair={signal.pair}
+          tf={tf}
+          direction={signal.direction}
+          signalCloseMs={signal.tfLastCandleClose[tf] ?? null}
+          candleCount={candleCount}
+          lifeState={state}
+        />
+      </div>
 
-      <footer className="flex items-center justify-between gap-2 text-[10px] font-mono">
-        <span className="dark:text-gray-500 light:text-slate-400">Last {candleCount} candles</span>
+      <footer className="flex items-center justify-between gap-2 text-[10px] font-mono shrink-0">
+        <span className="dark:text-gray-500 light:text-slate-400">
+          {signal.pair} · drag / scroll
+        </span>
         <a
           href={tvUrl(signal.pair, tf)}
           target="_blank"
