@@ -39,6 +39,10 @@ export const SignalCard: React.FC<SignalCardProps> = ({
   const directionColor = signal.direction === 'BUY' ? 'text-primary' : 'text-red-400';
   const directionIcon = signal.direction === 'BUY' ? 'trending_up' : 'trending_down';
   const change24hColor = signal.change24h >= 0 ? 'text-primary' : 'text-red-400';
+  // Live backend (Phase 4+5) returns price=0 / change24h=0 as placeholders until
+  // ticker enrichment lands (Phase 7.x). Render "—" in that case instead of
+  // misleading 0.00e+0 / +0.00% — matches the pair-detail page convention.
+  const hasTicker = signal.price > 0 || signal.change24h !== 0;
 
   const href = `/core-layer/${variant.urlSlug}/${signal.pair}`;
 
@@ -115,13 +119,19 @@ export const SignalCard: React.FC<SignalCardProps> = ({
             ))}
           </div>
           <div className="flex items-center gap-2 shrink-0">
-            <span className="font-mono dark:text-gray-300 light:text-slate-600">
-              {formatPrice(signal.price)}
-            </span>
-            <span className={`font-bold ${change24hColor}`}>
-              {signal.change24h >= 0 ? '+' : ''}
-              {signal.change24h.toFixed(2)}%
-            </span>
+            {hasTicker ? (
+              <>
+                <span className="font-mono dark:text-gray-300 light:text-slate-600">
+                  {formatPrice(signal.price)}
+                </span>
+                <span className={`font-bold ${change24hColor}`}>
+                  {signal.change24h >= 0 ? '+' : ''}
+                  {signal.change24h.toFixed(2)}%
+                </span>
+              </>
+            ) : (
+              <span className="font-mono dark:text-gray-500 light:text-slate-400">—</span>
+            )}
           </div>
         </div>
       </Link>

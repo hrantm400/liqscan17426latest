@@ -67,7 +67,7 @@ export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 
         pair={signal.pair}
         tf={tf}
         direction={signal.direction}
-        seedPrice={signal.price}
+        seedPrice={signal.price > 0 ? signal.price : 100}
         candleCount={candleCount}
         lifeState={state}
       />
