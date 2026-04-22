@@ -148,6 +148,23 @@ describe('CoreLayerQueryService', () => {
         });
     });
 
+    describe('pair filter', () => {
+        it('returns only rows matching the pair filter', async () => {
+            seedSignal({ id: 'btc', pair: 'BTCUSDT' });
+            seedSignal({ id: 'eth', pair: 'ETHUSDT' });
+            seedSignal({ id: 'btc-closed', pair: 'BTCUSDT', status: 'CLOSED' });
+
+            const res = await service.listSignals({ pair: 'BTCUSDT' });
+            expect(res.signals.map((s) => s.id)).toEqual(['btc']);
+
+            const resClosed = await service.listSignals({ pair: 'BTCUSDT', status: 'CLOSED' });
+            expect(resClosed.signals.map((s) => s.id)).toEqual(['btc-closed']);
+
+            const resMissing = await service.listSignals({ pair: 'XRPUSDT' });
+            expect(resMissing.signals).toEqual([]);
+        });
+    });
+
     describe('stats', () => {
         it('buckets by variant / anchor / depth for ACTIVE rows only', async () => {
             seedSignal({ id: 's-se', variant: 'SE', depth: 3, anchor: 'WEEKLY' });

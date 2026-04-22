@@ -47,6 +47,7 @@ type ListFilters = {
     direction?: Direction;
     anchor?: AnchorType;
     status?: 'ACTIVE' | 'CLOSED';
+    pair?: string;
     cursor?: string;
     limit?: number;
 };
@@ -72,6 +73,7 @@ export class CoreLayerQueryService {
         if (filters.variant) where.variant = filters.variant;
         if (filters.direction) where.direction = filters.direction;
         if (filters.anchor) where.anchor = filters.anchor;
+        if (filters.pair) where.pair = filters.pair;
 
         const cursorArgs = this.parseCursor(filters.cursor);
 
