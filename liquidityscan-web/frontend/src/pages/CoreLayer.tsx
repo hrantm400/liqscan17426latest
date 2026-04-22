@@ -35,6 +35,12 @@ export const CoreLayer: React.FC = () => {
   // `{ enabled: false, signals: [] }` fast and we fall back below.
   const listQuery = useCoreLayerSignals({ status: 'ACTIVE', limit: 50 });
 
+  // IMPORTANT: when enabled=true we treat the live response as authoritative
+  // even if it is empty — the "zero active Core-Layer signals" case is a valid
+  // state of the world (scanner has not produced any alignments yet) and
+  // dropping back to mock here would mislead the user into thinking there are
+  // 40+ live alignments when in reality there are none. Mock is only used
+  // when enabled=false OR when the stats query outright failed.
   const liveSignals: CoreLayerSignal[] = enabled && listQuery.data?.enabled
     ? listQuery.data.signals
     : [];
@@ -50,9 +56,7 @@ export const CoreLayer: React.FC = () => {
   }, [enabled, statsQuery.data]);
 
   const recent = useMemo(() => {
-    if (enabled && liveSignals.length > 0) {
-      return selectRecentPromotions(liveSignals, 6);
-    }
+    if (enabled) return selectRecentPromotions(liveSignals, 6);
     return getMockRecentPromotions(6);
   }, [enabled, liveSignals]);
 

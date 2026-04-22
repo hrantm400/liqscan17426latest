@@ -80,8 +80,11 @@ export const CoreLayerVariant: React.FC = () => {
     return [...act, ...cls];
   }, [enabled, activeQuery.data, closedQuery.data]);
 
+  // Fallback to mock only when the flag is off. When the flag is on the live
+  // response (including an empty one) is authoritative — see comment on
+  // CoreLayer.tsx's liveSignals for the rationale.
   const allSignals: CoreLayerSignal[] = useMemo(() => {
-    if (enabled && liveSignals.length > 0) return liveSignals;
+    if (enabled) return liveSignals;
     return variant ? getMockSignalsByVariant(variant) : [];
   }, [enabled, liveSignals, variant]);
 
@@ -144,6 +147,11 @@ export const CoreLayerVariant: React.FC = () => {
 
   const isLoading = enabled && (activeQuery.isLoading || closedQuery.isLoading) && allSignals.length === 0;
   const isError = enabled && (activeQuery.isError || closedQuery.isError) && allSignals.length === 0;
+  // Live + flag on + zero signals from the backend (across both ACTIVE and
+  // CLOSED) → friendly empty copy instead of three dashed depth boxes. When
+  // signals exist but filters narrow it to zero the DepthGrid's own dashed
+  // columns are the right UX — the user can see which depth buckets exist.
+  const isEmptyLive = enabled && !isLoading && !isError && allSignals.length === 0;
 
   return (
     <div className="flex flex-col gap-5 pb-10">
@@ -221,6 +229,11 @@ export const CoreLayerVariant: React.FC = () => {
               activeQuery.refetch();
               closedQuery.refetch();
             }}
+          />
+        ) : isEmptyLive ? (
+          <CoreLayerState
+            kind="empty"
+            message={`No ${variantMeta.shortLabel} alignments active. The scanner runs hourly — check back next cycle.`}
           />
         ) : (
           <DepthGrid signals={filtered} justPromotedIds={justPromotedIds} />
