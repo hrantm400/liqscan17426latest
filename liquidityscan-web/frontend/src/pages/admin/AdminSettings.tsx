@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { adminApi } from '../../services/userApi';
 import { toast } from 'react-hot-toast';
+import { CoreLayerAdminCard } from './CoreLayerAdminCard';
 
 export function AdminSettings() {
   const queryClient = useQueryClient();
@@ -74,6 +75,8 @@ export function AdminSettings() {
           </span>
         </label>
       </div>
+
+      <CoreLayerAdminCard />
 
       <div className="rounded-2xl border dark:border-white/10 light:border-green-300 dark:bg-white/5 light:bg-white p-5">
         <div className="text-xs uppercase tracking-widest dark:text-gray-500 light:text-slate-500 mb-3">CISD Structure Settings</div>
