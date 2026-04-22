@@ -10,9 +10,10 @@ import { TelegramModule } from '../telegram/telegram.module';
 import { PaymentsModule } from '../payments/payments.module';
 import { AppConfigModule } from '../app-config/app-config.module';
 import { BackupsModule } from './backups/backups.module';
+import { CoreLayerModule } from '../core-layer/core-layer.module';
 
 @Module({
-  imports: [PrismaModule, AuthModule, ConfigModule, MailModule, TelegramModule, PaymentsModule, AppConfigModule, BackupsModule],
+  imports: [PrismaModule, AuthModule, ConfigModule, MailModule, TelegramModule, PaymentsModule, AppConfigModule, BackupsModule, CoreLayerModule],
   controllers: [AdminController],
   providers: [AdminService, AdminGuard],
   exports: [AdminService, AdminGuard],

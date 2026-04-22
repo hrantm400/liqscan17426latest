@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TickerModule } from '../ticker/ticker.module';
+import { CoreLayerAdminService } from './core-layer.admin.service';
 import { CoreLayerController } from './core-layer.controller';
 import { CoreLayerDetectionService } from './core-layer.detection.service';
 import { CoreLayerLifecycleService } from './core-layer.lifecycle.service';
@@ -33,12 +34,14 @@ import { CoreLayerRuntimeFlagService } from './core-layer.runtime-flag.service';
         CoreLayerLifecycleService,
         CoreLayerQueryService,
         CoreLayerRuntimeFlagService,
+        CoreLayerAdminService,
     ],
     exports: [
         CoreLayerDetectionService,
         CoreLayerLifecycleService,
         CoreLayerQueryService,
         CoreLayerRuntimeFlagService,
+        CoreLayerAdminService,
     ],
 })
 export class CoreLayerModule {}
