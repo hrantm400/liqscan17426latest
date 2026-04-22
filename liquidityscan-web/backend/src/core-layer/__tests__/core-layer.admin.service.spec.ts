@@ -1,5 +1,8 @@
 import { CoreLayerAdminService } from '../core-layer.admin.service';
-import type { CoreLayerRuntimeStatus } from '../core-layer.runtime-flag.service';
+import type {
+    CoreLayerRuntimeStatus,
+    CoreLayerSubHourRuntimeStatus,
+} from '../core-layer.runtime-flag.service';
 
 /**
  * CoreLayerAdminService — unit tests.
@@ -13,6 +16,7 @@ import type { CoreLayerRuntimeStatus } from '../core-layer.runtime-flag.service'
 
 class FakeRuntimeFlag {
     private enabled = true;
+    private subHourEnabled = true;
     status: CoreLayerRuntimeStatus = {
         enabled: true,
         envSeed: true,
@@ -22,13 +26,31 @@ class FakeRuntimeFlag {
         consecutiveFailures: 0,
         recentErrors: [],
     };
+    subHourStatus: CoreLayerSubHourRuntimeStatus = {
+        enabled: true,
+        envSeed: true,
+        lastSuccessfulTickAt: null,
+        lastTickDurationMs: null,
+        lastTickNumber: 0,
+        consecutiveFailures: 0,
+        recentErrors: [],
+        lastDirtyPairCount: null,
+    };
     setEnabledMock = jest.fn(async (v: boolean, _actor?: string) => {
         this.enabled = v;
         this.status.enabled = v;
     });
+    setSubHourEnabledMock = jest.fn(async (v: boolean, _actor?: string) => {
+        this.subHourEnabled = v;
+        this.subHourStatus.enabled = v;
+    });
     isEnabled = () => this.enabled;
+    isSubHourEnabled = () => this.subHourEnabled;
     getStatus = () => ({ ...this.status });
+    getSubHourStatus = () => ({ ...this.subHourStatus });
     setEnabled = (v: boolean, actor?: string) => this.setEnabledMock(v, actor);
+    setSubHourEnabled = (v: boolean, actor?: string) =>
+        this.setSubHourEnabledMock(v, actor);
 }
 
 class FakeDetection {
@@ -111,6 +133,10 @@ describe('CoreLayerAdminService', () => {
                 DAILY: 30,
                 FOURHOUR: 7,
             });
+            // Phase 7.3 — sub-hour runtime must be surfaced alongside
+            // the hourly runtime so the admin card can render both
+            // health widgets without a second round trip.
+            expect(stats.subHourRuntime).toEqual(flag.getSubHourStatus());
         });
 
         it('sorts byVariantAndAnchor deterministically (variant asc, then anchor asc)', async () => {
@@ -161,6 +187,27 @@ describe('CoreLayerAdminService', () => {
             const out = await svc.setEnabled(true, 'admin');
             expect(out.previousEnabled).toBe(true);
             expect(out.enabled).toBe(true);
+        });
+    });
+
+    describe('setSubHourEnabled (Phase 7.3)', () => {
+        it('returns previousSubHourEnabled and delegates with the actor', async () => {
+            const { svc, flag } = build();
+            const out = await svc.setSubHourEnabled(false, 'admin-sub');
+
+            expect(out.previousSubHourEnabled).toBe(true);
+            expect(out.subHourEnabled).toBe(false);
+            expect(flag.setSubHourEnabledMock).toHaveBeenCalledWith(
+                false,
+                'admin-sub',
+            );
+        });
+
+        it('does not touch the master flag', async () => {
+            const { svc, flag } = build();
+            await svc.setSubHourEnabled(false, 'admin');
+            expect(flag.setEnabledMock).not.toHaveBeenCalled();
+            expect(flag.isEnabled()).toBe(true);
         });
     });
 

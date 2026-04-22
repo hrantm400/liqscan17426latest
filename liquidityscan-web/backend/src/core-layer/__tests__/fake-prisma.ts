@@ -29,9 +29,22 @@ class Table<T extends Row> {
                 expected &&
                 typeof expected === 'object' &&
                 !Array.isArray(expected) &&
-                'in' in (expected as any)
+                !(expected instanceof Date)
             ) {
-                if (!(expected as any).in.includes((row as any)[key])) return false;
+                const exp = expected as Record<string, any>;
+                const val = (row as any)[key];
+                // Comparison operators — just enough to support the
+                // tier-aware depth filter (`{ lte: SCOUT_MAX_DEPTH }`)
+                // plus common extensions for future tests.
+                if ('in' in exp) {
+                    if (!exp.in.includes(val)) return false;
+                    continue;
+                }
+                if ('lte' in exp && !(val <= exp.lte)) return false;
+                if ('lt' in exp && !(val < exp.lt)) return false;
+                if ('gte' in exp && !(val >= exp.gte)) return false;
+                if ('gt' in exp && !(val > exp.gt)) return false;
+                if ('not' in exp && val === exp.not) return false;
                 continue;
             }
             if ((row as any)[key] !== expected) return false;

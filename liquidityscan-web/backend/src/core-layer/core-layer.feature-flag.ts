@@ -19,3 +19,20 @@ export function readCoreLayerEnabledFromEnv(): boolean {
     const s = String(v).trim().toLowerCase();
     return ['1', 'true', 'yes', 'on', 'enabled'].includes(s);
 }
+
+/**
+ * Phase 7.3 — sub-hour scanning env-flag reader.
+ *
+ * Mirrors the semantics of readCoreLayerEnabledFromEnv() but reads
+ * CORE_LAYER_SUBHOUR_ENABLED. Used as the one-shot AppConfig seed on
+ * first boot after the Phase 7.3 migration. Keeping the two flags
+ * independent lets ops deploy the WS extension + dispatcher code
+ * first (master flag on, sub-hour flag off) and flip sub-hour scanning
+ * only after observing WS connection-pool stability — per ADR D18.
+ */
+export function readCoreLayerSubHourEnabledFromEnv(): boolean {
+    const v = process.env.CORE_LAYER_SUBHOUR_ENABLED;
+    if (v === undefined || v === '') return false;
+    const s = String(v).trim().toLowerCase();
+    return ['1', 'true', 'yes', 'on', 'enabled'].includes(s);
+}

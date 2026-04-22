@@ -18,6 +18,7 @@ import { AdminGuard } from './guards/admin.guard';
 import { UserThrottlerGuard } from '../common/throttler/user-throttler.guard';
 import { CoreLayerAdminService } from '../core-layer/core-layer.admin.service';
 import { SetCoreLayerEnabledDto } from '../core-layer/dto/set-core-layer-enabled.dto';
+import { SetCoreLayerSubHourEnabledDto } from '../core-layer/dto/set-core-layer-sub-hour-enabled.dto';
 
 // PR 3.3 — admin mutations are user-tracked (not IP-tracked) so one
 // admin accidentally hammering the refund endpoint from home WiFi
@@ -285,5 +286,22 @@ export class AdminController {
   @Throttle({ strict: { limit: 3, ttl: 60000 } })
   async forceCoreLayerRescan() {
     return this.coreLayerAdmin.forceRescan();
+  }
+
+  // Phase 7.3 — sub-hour toggle. Mirrors the master toggle (throttle
+  // shape + global-skip pattern + per-admin actor attribution from the
+  // JWT). Separated endpoint rather than an overloaded body keeps the
+  // two flags independently auditable in the Nest request log.
+  @Post('core-layer/sub-hour-enabled')
+  @SkipThrottle({ default: true, burst: true })
+  @Throttle({ strict: { limit: 10, ttl: 60000 } })
+  async setCoreLayerSubHourEnabled(
+    @Body() body: SetCoreLayerSubHourEnabledDto,
+    @Req() req: any,
+  ) {
+    return this.coreLayerAdmin.setSubHourEnabled(
+      Boolean(body?.subHourEnabled),
+      req.user?.userId,
+    );
   }
 }

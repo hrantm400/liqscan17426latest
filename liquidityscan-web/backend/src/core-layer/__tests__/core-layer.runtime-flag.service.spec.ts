@@ -10,7 +10,11 @@
 import { CoreLayerRuntimeFlagService } from '../core-layer.runtime-flag.service';
 
 class FakeAppConfigStore {
-    row: { id: string; coreLayerEnabled: boolean | null } | null = null;
+    row: {
+        id: string;
+        coreLayerEnabled: boolean | null;
+        coreLayerSubHourEnabled: boolean | null;
+    } | null = null;
     upsertCalls = 0;
     updateCalls = 0;
 
@@ -19,7 +23,11 @@ class FakeAppConfigStore {
         if (this.row && this.row.id === where.id) {
             Object.assign(this.row, update ?? {});
         } else {
-            this.row = { id: create.id, coreLayerEnabled: create.coreLayerEnabled ?? null };
+            this.row = {
+                id: create.id,
+                coreLayerEnabled: create.coreLayerEnabled ?? null,
+                coreLayerSubHourEnabled: create.coreLayerSubHourEnabled ?? null,
+            };
         }
         if (select) {
             const picked: Record<string, any> = {};
@@ -41,12 +49,17 @@ class FakeAppConfigStore {
     });
 }
 
-function makeService(envValue?: string | undefined): {
+function makeService(
+    envValue?: string | undefined,
+    subHourEnvValue?: string | undefined,
+): {
     svc: CoreLayerRuntimeFlagService;
     store: FakeAppConfigStore;
 } {
     if (envValue === undefined) delete process.env.CORE_LAYER_ENABLED;
     else process.env.CORE_LAYER_ENABLED = envValue;
+    if (subHourEnvValue === undefined) delete process.env.CORE_LAYER_SUBHOUR_ENABLED;
+    else process.env.CORE_LAYER_SUBHOUR_ENABLED = subHourEnvValue;
     const store = new FakeAppConfigStore();
     const prisma = { appConfig: store } as any;
     const svc = new CoreLayerRuntimeFlagService(prisma);
@@ -55,10 +68,16 @@ function makeService(envValue?: string | undefined): {
 
 describe('CoreLayerRuntimeFlagService', () => {
     const originalEnv = process.env.CORE_LAYER_ENABLED;
+    const originalSubHourEnv = process.env.CORE_LAYER_SUBHOUR_ENABLED;
 
     afterAll(() => {
         if (originalEnv === undefined) delete process.env.CORE_LAYER_ENABLED;
         else process.env.CORE_LAYER_ENABLED = originalEnv;
+        if (originalSubHourEnv === undefined) {
+            delete process.env.CORE_LAYER_SUBHOUR_ENABLED;
+        } else {
+            process.env.CORE_LAYER_SUBHOUR_ENABLED = originalSubHourEnv;
+        }
     });
 
     describe('boot seed', () => {
@@ -75,7 +94,11 @@ describe('CoreLayerRuntimeFlagService', () => {
 
         it('seeds AppConfig from env when row exists with null column (post-migration first boot)', async () => {
             const { svc, store } = makeService('true');
-            store.row = { id: 'singleton', coreLayerEnabled: null };
+            store.row = {
+                id: 'singleton',
+                coreLayerEnabled: null,
+                coreLayerSubHourEnabled: null,
+            };
             await svc.onModuleInit();
             expect(svc.isEnabled()).toBe(true);
             expect(store.row.coreLayerEnabled).toBe(true);
@@ -86,7 +109,16 @@ describe('CoreLayerRuntimeFlagService', () => {
 
         it('respects AppConfig when the column is already set (admin override wins over env)', async () => {
             const { svc, store } = makeService('true');
-            store.row = { id: 'singleton', coreLayerEnabled: false };
+            store.row = {
+                id: 'singleton',
+                coreLayerEnabled: false,
+                // Pre-seed the sub-hour column too so this test isolates
+                // the master-flag precedence rule — otherwise the
+                // Phase 7.3 sub-hour NULL check in onModuleInit would
+                // trigger a spurious follow-up update and throw off
+                // the updateCalls assertion below.
+                coreLayerSubHourEnabled: false,
+            };
             await svc.onModuleInit();
             expect(svc.isEnabled()).toBe(false);
             expect(store.updateCalls).toBe(0);
@@ -226,12 +258,80 @@ describe('CoreLayerRuntimeFlagService', () => {
 
         it('exposes the env seed separately from the effective value', async () => {
             const { svc, store } = makeService('true');
-            store.row = { id: 'singleton', coreLayerEnabled: false };
+            store.row = {
+                id: 'singleton',
+                coreLayerEnabled: false,
+                coreLayerSubHourEnabled: null,
+            };
             await svc.onModuleInit();
 
             const status = svc.getStatus();
             expect(status.enabled).toBe(false);
             expect(status.envSeed).toBe(true);
+        });
+    });
+
+    describe('sub-hour flag (Phase 7.3)', () => {
+        it('seeds coreLayerSubHourEnabled from env on first boot (no row)', async () => {
+            const { svc, store } = makeService('true', 'true');
+            await svc.onModuleInit();
+            expect(svc.isSubHourEnabled()).toBe(true);
+            expect(store.row?.coreLayerSubHourEnabled).toBe(true);
+        });
+
+        it('patches the column to env seed when row exists but column is null', async () => {
+            const { svc, store } = makeService('true', 'true');
+            store.row = {
+                id: 'singleton',
+                coreLayerEnabled: true,
+                coreLayerSubHourEnabled: null,
+            };
+            await svc.onModuleInit();
+            expect(svc.isSubHourEnabled()).toBe(true);
+            expect(store.row.coreLayerSubHourEnabled).toBe(true);
+            expect(store.updateCalls).toBeGreaterThanOrEqual(1);
+        });
+
+        it('admin-set sub-hour value wins over env seed', async () => {
+            const { svc, store } = makeService('true', 'true');
+            store.row = {
+                id: 'singleton',
+                coreLayerEnabled: true,
+                coreLayerSubHourEnabled: false,
+            };
+            await svc.onModuleInit();
+            expect(svc.isSubHourEnabled()).toBe(false);
+        });
+
+        it('independently mutable via setSubHourEnabled without touching master flag', async () => {
+            const { svc } = makeService('true', 'false');
+            await svc.onModuleInit();
+            expect(svc.isEnabled()).toBe(true);
+            expect(svc.isSubHourEnabled()).toBe(false);
+
+            await svc.setSubHourEnabled(true, 'admin');
+
+            expect(svc.isEnabled()).toBe(true);
+            expect(svc.isSubHourEnabled()).toBe(true);
+        });
+
+        it('tracks sub-hour tick telemetry disjoint from hourly telemetry', async () => {
+            const { svc } = makeService('true', 'true');
+            await svc.onModuleInit();
+
+            svc.recordTickStart();
+            svc.recordTickSuccess(10);
+            expect(svc.getStatus().lastTickNumber).toBe(1);
+
+            expect(svc.recordSubHourTickStart(3)).toBe(1);
+            svc.recordSubHourTickSuccess(20);
+            const sub = svc.getSubHourStatus();
+            expect(sub.lastTickNumber).toBe(1);
+            expect(sub.lastDirtyPairCount).toBe(3);
+            expect(sub.lastTickDurationMs).toBe(20);
+
+            // Hourly counter unaffected.
+            expect(svc.getStatus().lastTickNumber).toBe(1);
         });
     });
 });

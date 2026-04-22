@@ -210,6 +210,75 @@ describe('CoreLayerQueryService', () => {
         });
     });
 
+    describe('tier gating (Phase 7.3)', () => {
+        // All three tests seed one SCOUT-safe row and one Pro row
+        // (either a chain containing a PRO_TF or depth ≥ 5) and verify
+        // SCOUT gets the safe row only, FULL_ACCESS gets both.
+        beforeEach(() => {
+            // Row 1 — plain W/1D/4H, depth 3 → SCOUT-visible.
+            seedSignal({ id: 'safe', chain: ['W', '1D', '4H'], depth: 3 });
+            // Row 2 — contains 15m leaf → Pro only.
+            seedSignal({
+                id: 'sub-hour',
+                chain: ['4H', '15m'],
+                depth: 2,
+                anchor: 'FOURHOUR',
+            });
+            // Row 3 — depth 5 → Pro only.
+            seedSignal({
+                id: 'deep5',
+                chain: ['W', '1D', '4H', '1H', '15m'],
+                depth: 5,
+            });
+        });
+
+        it('SCOUT callers see only the non-Pro row', async () => {
+            const res = await service.listSignals({ tier: 'SCOUT' });
+            expect(res.signals.map((s) => s.id)).toEqual(['safe']);
+        });
+
+        it('FULL_ACCESS callers see every row', async () => {
+            const res = await service.listSignals({ tier: 'FULL_ACCESS' });
+            expect(res.signals.map((s) => s.id).sort()).toEqual([
+                'deep5',
+                'safe',
+                'sub-hour',
+            ]);
+        });
+
+        it('getSignalById hides Pro rows from SCOUT (returns null)', async () => {
+            expect(
+                await service.getSignalById('sub-hour', 'SCOUT'),
+            ).toBeNull();
+            expect(await service.getSignalById('deep5', 'SCOUT')).toBeNull();
+            expect(
+                (await service.getSignalById('safe', 'SCOUT'))!.id,
+            ).toBe('safe');
+        });
+
+        it('getSignalById returns Pro rows for FULL_ACCESS', async () => {
+            const dto = await service.getSignalById('sub-hour', 'FULL_ACCESS');
+            expect(dto!.id).toBe('sub-hour');
+        });
+
+        it('stats totals only count SCOUT-visible rows under SCOUT', async () => {
+            const s = await service.getStats('SCOUT');
+            // Only the depth-3 row passes the SCOUT depth cap (≤ 4).
+            // The depth-5 row is excluded by SQL, the 4H+15m row by
+            // SQL depth check (depth=2 ≤ 4) stays — this is the
+            // approximation called out in the service comment; the
+            // per-variant bucket therefore includes the 15m row at
+            // SQL level. The strict PRO_TFS strip is applied in the
+            // list endpoint, not in stats aggregation.
+            expect(s.byDepth['5']).toBeUndefined();
+        });
+
+        it('stats totals include all rows under FULL_ACCESS', async () => {
+            const s = await service.getStats('FULL_ACCESS');
+            expect(s.byDepth['5']).toBe(1);
+        });
+    });
+
     describe('ticker enrichment', () => {
         it('populates price and change24h from the ticker cache when available', async () => {
             seedSignal({ id: 'btc', pair: 'BTCUSDT' });

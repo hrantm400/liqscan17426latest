@@ -1,12 +1,15 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
 import { TickerModule } from '../ticker/ticker.module';
+import { AppConfigModule } from '../app-config/app-config.module';
+import { AuthModule } from '../auth/auth.module';
 import { CoreLayerAdminService } from './core-layer.admin.service';
 import { CoreLayerController } from './core-layer.controller';
 import { CoreLayerDetectionService } from './core-layer.detection.service';
 import { CoreLayerLifecycleService } from './core-layer.lifecycle.service';
 import { CoreLayerQueryService } from './core-layer.query.service';
 import { CoreLayerRuntimeFlagService } from './core-layer.runtime-flag.service';
+import { CoreLayerTierResolverService } from './core-layer.tier-resolver.service';
 
 /**
  * Core-Layer backend module.
@@ -27,7 +30,11 @@ import { CoreLayerRuntimeFlagService } from './core-layer.runtime-flag.service';
  * invoked from the scanner.
  */
 @Module({
-    imports: [PrismaModule, TickerModule],
+    // AuthModule re-exports JwtModule; CoreLayerTierResolverService needs
+    // JwtService to decode the optional `Authorization` header on public
+    // Core-Layer endpoints (Phase 7.3). AppConfigModule provides the
+    // launch-promo flag that feeds the FREE → FULL_ACCESS promotion.
+    imports: [PrismaModule, TickerModule, AppConfigModule, AuthModule],
     controllers: [CoreLayerController],
     providers: [
         CoreLayerDetectionService,
@@ -35,6 +42,7 @@ import { CoreLayerRuntimeFlagService } from './core-layer.runtime-flag.service';
         CoreLayerQueryService,
         CoreLayerRuntimeFlagService,
         CoreLayerAdminService,
+        CoreLayerTierResolverService,
     ],
     exports: [
         CoreLayerDetectionService,
@@ -42,6 +50,7 @@ import { CoreLayerRuntimeFlagService } from './core-layer.runtime-flag.service';
         CoreLayerQueryService,
         CoreLayerRuntimeFlagService,
         CoreLayerAdminService,
+        CoreLayerTierResolverService,
     ],
 })
 export class CoreLayerModule {}

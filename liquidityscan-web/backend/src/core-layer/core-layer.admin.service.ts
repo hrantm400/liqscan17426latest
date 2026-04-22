@@ -6,6 +6,7 @@ import type { AnchorType, CoreLayerVariantKey } from './core-layer.constants';
 import type {
     CoreLayerAdminForceRescanDto,
     CoreLayerAdminSetEnabledDto,
+    CoreLayerAdminSetSubHourEnabledDto,
     CoreLayerAdminStatsDto,
 } from './dto/core-layer-admin.dto';
 
@@ -50,6 +51,7 @@ export class CoreLayerAdminService {
 
     async getStats(): Promise<CoreLayerAdminStatsDto> {
         const runtime = this.runtimeFlag.getStatus();
+        const subHourRuntime = this.runtimeFlag.getSubHourStatus();
 
         const [total, byVariantRows, byAnchorRows, byVariantAndAnchorRows] =
             await Promise.all([
@@ -108,6 +110,7 @@ export class CoreLayerAdminService {
 
         return {
             runtime,
+            subHourRuntime,
             activeSignalCount: {
                 total,
                 byVariant,
@@ -124,6 +127,22 @@ export class CoreLayerAdminService {
         const previousEnabled = this.runtimeFlag.isEnabled();
         await this.runtimeFlag.setEnabled(enabled, actor);
         return { enabled, previousEnabled };
+    }
+
+    /**
+     * Phase 7.3 — flip the sub-hour flag independently of the master
+     * Core-Layer toggle (approved toggle (e)). Admin can leave master
+     * ON while temporarily disabling 15m/5m event-driven scanning —
+     * useful during Binance WS incidents or a noisy-pair investigation
+     * without losing the hourly cron output.
+     */
+    async setSubHourEnabled(
+        subHourEnabled: boolean,
+        actor: string | undefined,
+    ): Promise<CoreLayerAdminSetSubHourEnabledDto> {
+        const previousSubHourEnabled = this.runtimeFlag.isSubHourEnabled();
+        await this.runtimeFlag.setSubHourEnabled(subHourEnabled, actor);
+        return { subHourEnabled, previousSubHourEnabled };
     }
 
     /**

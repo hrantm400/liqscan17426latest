@@ -53,6 +53,23 @@ export function CoreLayerAdminCard() {
         onError: (e: Error) => toast.error(e.message || 'Toggle failed'),
     });
 
+    // Phase 7.3 — sub-hour toggle mutation. Independent of the master flag:
+    // flipping sub-hour off only stops the 15m/5m event-driven dispatcher
+    // and the hourly 1H/4H/1D/W scanner keeps running per ADR D18.
+    const subHourToggleMutation = useMutation({
+        mutationFn: (subHourEnabled: boolean) =>
+            adminApi.setAdminCoreLayerSubHourEnabled(subHourEnabled),
+        onSuccess: (res) => {
+            queryClient.invalidateQueries({ queryKey: ['admin', 'core-layer', 'stats'] });
+            toast.success(
+                res.previousSubHourEnabled === res.subHourEnabled
+                    ? `Sub-hour scanning is ${res.subHourEnabled ? 'enabled' : 'disabled'}`
+                    : `Sub-hour scanning ${res.previousSubHourEnabled ? 'enabled' : 'disabled'} → ${res.subHourEnabled ? 'enabled' : 'disabled'}`,
+            );
+        },
+        onError: (e: Error) => toast.error(e.message || 'Sub-hour toggle failed'),
+    });
+
     const rescanMutation = useMutation({
         mutationFn: () => adminApi.forceAdminCoreLayerRescan(),
         onSuccess: (res) => {
@@ -69,6 +86,7 @@ export function CoreLayerAdminCard() {
     });
 
     const runtime = statsQuery.data?.runtime;
+    const subHourRuntime = statsQuery.data?.subHourRuntime;
     const counts = statsQuery.data?.activeSignalCount;
     const hasFailures = (runtime?.consecutiveFailures ?? 0) > 0;
     const errorsExpanded =
@@ -78,6 +96,11 @@ export function CoreLayerAdminCard() {
         if (!runtime?.lastSuccessfulTickAt) return 'never';
         return formatRelative(runtime.lastSuccessfulTickAt);
     }, [runtime?.lastSuccessfulTickAt]);
+
+    const subHourLastSuccessText = useMemo(() => {
+        if (!subHourRuntime?.lastSuccessfulTickAt) return 'never';
+        return formatRelative(subHourRuntime.lastSuccessfulTickAt);
+    }, [subHourRuntime?.lastSuccessfulTickAt]);
 
     return (
         <div className="rounded-2xl border dark:border-white/10 light:border-green-300 dark:bg-white/5 light:bg-white p-5">
@@ -155,7 +178,7 @@ export function CoreLayerAdminCard() {
                 </div>
             )}
 
-            <div className="flex flex-wrap gap-3 items-center mb-2">
+            <div className="flex flex-wrap gap-3 items-center mb-4">
                 <button
                     className="px-4 py-2 rounded-xl bg-amber-500/80 hover:bg-amber-500 text-black font-bold disabled:opacity-50"
                     disabled={
@@ -176,6 +199,76 @@ export function CoreLayerAdminCard() {
                         ? `${runtime.lastTickDurationMs}ms`
                         : '—'}
                 </span>
+            </div>
+
+            {/* Phase 7.3 — sub-hour sibling controls. Toggle and telemetry
+                live in a dedicated block so admins can see hourly and
+                sub-hour tick health side-by-side without confusion. */}
+            <div className="rounded-xl border dark:border-white/10 light:border-green-200 p-4 mb-4">
+                <div className="flex items-start justify-between gap-4 mb-3">
+                    <div>
+                        <div className="text-xs uppercase tracking-widest dark:text-gray-500 light:text-slate-500">
+                            Sub-hour scanning (15m / 5m)
+                        </div>
+                        <p className="text-xs dark:text-gray-500 light:text-slate-500 mt-1 max-w-md">
+                            Event-driven detection on Binance WS kline-close events,
+                            30s debounced. Independent of the master toggle above —
+                            disabling only stops 15m/5m; hourly 1H/4H/1D/W keeps
+                            running.
+                        </p>
+                    </div>
+                    <StatusPill
+                        enabled={Boolean(subHourRuntime?.enabled)}
+                        loading={statsQuery.isLoading}
+                        unknown={!subHourRuntime && !statsQuery.isLoading}
+                    />
+                </div>
+
+                <label className="flex items-center gap-3 cursor-pointer select-none mb-3">
+                    <input
+                        type="checkbox"
+                        className="w-5 h-5 rounded border dark:border-white/20 light:border-slate-300 accent-primary"
+                        checked={Boolean(subHourRuntime?.enabled)}
+                        disabled={
+                            subHourToggleMutation.isPending ||
+                            statsQuery.isLoading ||
+                            statsQuery.isError ||
+                            !subHourRuntime
+                        }
+                        onChange={(e) => subHourToggleMutation.mutate(e.target.checked)}
+                    />
+                    <span className="dark:text-white light:text-text-dark font-semibold text-sm">
+                        Sub-hour detection enabled
+                    </span>
+                    {subHourRuntime &&
+                        subHourRuntime.enabled !== subHourRuntime.envSeed && (
+                            <span className="text-xs dark:text-amber-300 light:text-amber-600">
+                                (admin override — env seed was{' '}
+                                {subHourRuntime.envSeed ? 'on' : 'off'})
+                            </span>
+                        )}
+                </label>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    <Stat
+                        label="Last tick #"
+                        value={subHourRuntime?.lastTickNumber ?? '—'}
+                    />
+                    <Stat label="Last success" value={subHourLastSuccessText} />
+                    <Stat
+                        label="Last batch size"
+                        value={subHourRuntime?.lastDirtyPairCount ?? '—'}
+                    />
+                    <Stat
+                        label="Consecutive failures"
+                        value={subHourRuntime?.consecutiveFailures ?? '—'}
+                        emphasis={
+                            (subHourRuntime?.consecutiveFailures ?? 0) > 0
+                                ? 'warn'
+                                : undefined
+                        }
+                    />
+                </div>
             </div>
 
             <div>

@@ -8,14 +8,37 @@ import type { CandleData } from '../signals/indicators';
 const WS_BASE = 'wss://fstream.binance.com/ws';
 const MAX_STREAMS_PER_CONN = 200;
 const SUBSCRIBE_BATCH = 200;
-const INTERVALS = ['1h', '4h', '1d', '1w'];
-const CANDLE_HISTORY_LIMIT = 300;
+// Phase 7.3 — 15m/5m streams added. With ~600 USDT-perp symbols this
+// takes us from 4N=2400 to 6N=3600 streams, i.e. 12→18 WS connections
+// at 200 streams/conn. Binance Futures docs document 200 streams/conn
+// but publish no explicit connection cap; the reconnect/backoff path
+// below handles any rate-limit edge case gracefully.
+const INTERVALS = ['1h', '4h', '1d', '1w', '15m', '5m'];
+/**
+ * The lower TF streams produce far more candles per calendar window —
+ * 500 holds ~41 h of 5m candles, which is enough scan-window headroom
+ * for sub-hour lookbacks without ballooning memory (symbol count ×
+ * 6 TFs × 500 candles ≈ 1.8M data points in worst case, still <500 MB).
+ */
+const CANDLE_HISTORY_LIMIT = 500;
 const PING_INTERVAL_MS = 3 * 60 * 1000;
 const PONG_TIMEOUT_MS = 10_000;
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 const DB_FLUSH_INTERVAL_MS = 5 * 60 * 1000;
 const SNAPSHOT_FRESH_MS = 60 * 60 * 1000;
+
+/**
+ * Phase 7.3 — sub-hour event sink. Consumers (currently only
+ * SubHourScannerDispatcher) register a listener that fires every time a
+ * 15m or 5m kline closes (k.x === true). Higher TFs still flow through
+ * the in-memory store + hourly cron, untouched.
+ */
+export type SubHourCloseListener = (evt: {
+    symbol: string;
+    interval: '15m' | '5m';
+    candle: CandleData;
+}) => void;
 
 function storeKey(symbol: string, interval: string): string {
   return `${symbol.toUpperCase()}:${interval}`;
@@ -41,6 +64,7 @@ export class BinanceWsManager implements OnModuleInit, OnModuleDestroy {
   private symbols: string[] = [];
   private ready = false;
   private destroying = false;
+  private subHourListeners = new Set<SubHourCloseListener>();
 
   constructor(
     private readonly candlesService: CandlesService,
@@ -65,6 +89,18 @@ export class BinanceWsManager implements OnModuleInit, OnModuleDestroy {
 
   isReady(): boolean {
     return this.ready && this.enabled;
+  }
+
+  /**
+   * Phase 7.3 — register a listener fired once per 15m/5m kline close.
+   * Returns an unregister function. Listeners that throw are logged and
+   * isolated so one bad consumer cannot stall the WS read loop.
+   */
+  onSubHourClose(listener: SubHourCloseListener): () => void {
+    this.subHourListeners.add(listener);
+    return () => {
+      this.subHourListeners.delete(listener);
+    };
   }
 
   // ── Lifecycle ──────────────────────────────────────────────
@@ -113,8 +149,16 @@ export class BinanceWsManager implements OnModuleInit, OnModuleDestroy {
   // ── Bootstrap ──────────────────────────────────────────────
 
   private async bootstrapStore(): Promise<void> {
-    const sampleAge = await this.candleSnapshotService.getSnapshotAge(this.symbols[0] || 'BTCUSDT', '4h');
-    const isFresh = sampleAge !== null && sampleAge < SNAPSHOT_FRESH_MS;
+    // Phase 7.3 — sample every TF we stream, not just 4h. First boot
+    // after the 15m/5m addition needs a REST fetch even when hourly
+    // snapshots are still fresh, otherwise the sub-hour dispatcher
+    // would start with empty in-memory candle stores and produce no
+    // signals until the first scheduled REST refresh.
+    const sampleSym = this.symbols[0] || 'BTCUSDT';
+    const ages = await Promise.all(
+      INTERVALS.map((tf) => this.candleSnapshotService.getSnapshotAge(sampleSym, tf)),
+    );
+    const isFresh = ages.every((a) => a !== null && a < SNAPSHOT_FRESH_MS);
 
     if (!isFresh) {
       this.logger.log('BinanceWsManager: snapshots stale or empty — running REST fetch first');
@@ -257,21 +301,51 @@ export class BinanceWsManager implements OnModuleInit, OnModuleDestroy {
 
     const last = candles[candles.length - 1];
 
+    let appendedClose: CandleData | null = null;
+
     if (openTime === last.openTime) {
       last.high = Math.max(last.high, high);
       last.low = Math.min(last.low, low);
       last.close = close;
       last.volume = volume;
       this.dirtyKeys.add(key);
+      // Binance emits one final tick per candle with x=true and openTime
+      // unchanged from the live update stream — fire the sub-hour event
+      // from this branch too so consumers see the authoritative close.
+      if (isClosed && (interval === '15m' || interval === '5m')) {
+        appendedClose = { ...last };
+      }
     } else if (openTime > last.openTime) {
+      const next: CandleData = { openTime, open, high, low, close, volume };
       if (isClosed) {
-        candles.push({ openTime, open, high, low, close, volume });
+        candles.push(next);
+        if (interval === '15m' || interval === '5m') appendedClose = next;
       } else {
         if (!Number.isFinite(last.close)) return;
-        candles.push({ openTime, open, high, low, close, volume });
+        candles.push(next);
       }
       if (candles.length > CANDLE_HISTORY_LIMIT) candles.shift();
       this.dirtyKeys.add(key);
+    }
+
+    if (appendedClose && this.subHourListeners.size > 0) {
+      this.dispatchSubHourClose(symbol, interval as '15m' | '5m', appendedClose);
+    }
+  }
+
+  private dispatchSubHourClose(
+    symbol: string,
+    interval: '15m' | '5m',
+    candle: CandleData,
+  ): void {
+    for (const listener of this.subHourListeners) {
+      try {
+        listener({ symbol, interval, candle });
+      } catch (e) {
+        this.logger.warn(
+          `sub-hour listener threw for ${symbol}:${interval}: ${(e as Error).message}`,
+        );
+      }
     }
   }
 

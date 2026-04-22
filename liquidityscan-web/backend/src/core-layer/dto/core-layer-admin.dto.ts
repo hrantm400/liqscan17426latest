@@ -1,4 +1,7 @@
-import type { CoreLayerRuntimeStatus } from '../core-layer.runtime-flag.service';
+import type {
+    CoreLayerRuntimeStatus,
+    CoreLayerSubHourRuntimeStatus,
+} from '../core-layer.runtime-flag.service';
 import type { AnchorType, CoreLayerVariantKey } from '../core-layer.constants';
 
 /**
@@ -12,6 +15,10 @@ import type { AnchorType, CoreLayerVariantKey } from '../core-layer.constants';
 
 export interface CoreLayerAdminStatsDto {
     runtime: CoreLayerRuntimeStatus;
+    // Phase 7.3 — sibling sub-hour status lives at the top level so the
+    // admin card can render two independent health widgets (hourly /
+    // sub-hour) without reaching into nested telemetry struct shapes.
+    subHourRuntime: CoreLayerSubHourRuntimeStatus;
     activeSignalCount: {
         total: number;
         byVariant: Record<CoreLayerVariantKey, number>;
@@ -40,4 +47,14 @@ export interface CoreLayerAdminForceRescanDto {
 export interface CoreLayerAdminSetEnabledDto {
     enabled: boolean;
     previousEnabled: boolean;
+}
+
+/**
+ * Phase 7.3 — sub-hour toggle response. Distinct DTO from the master
+ * toggle so the admin UI can't accidentally confuse which flag it
+ * just flipped when serializing for a toast notification.
+ */
+export interface CoreLayerAdminSetSubHourEnabledDto {
+    subHourEnabled: boolean;
+    previousSubHourEnabled: boolean;
 }
