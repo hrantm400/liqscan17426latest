@@ -31,42 +31,41 @@ enum UserTier {
   FULL_ACCESS
 }
 
-
 model User {
-  id                  String    @id @default(uuid())
-  email               String    @unique
-  name                String?
-  password            String?
-  googleId            String?   @unique
-  avatar              String?
-  isAdmin             Boolean   @default(false)
-  telegramId          String?   @unique
-  subscriptionId      String?
-  subscription        Subscription? @relation(fields: [subscriptionId], references: [id])
+  id                    String        @id @default(uuid())
+  email                 String        @unique
+  name                  String?
+  password              String?
+  googleId              String?       @unique
+  avatar                String?
+  isAdmin               Boolean       @default(false)
+  telegramId            String?       @unique
+  subscriptionId        String?
+  subscription          Subscription? @relation(fields: [subscriptionId], references: [id])
   subscriptionExpiresAt DateTime?
-  subscriptionStatus  String    @default("none") // none, active, expired, cancelled
-  timezone            String?
+  subscriptionStatus    String        @default("none") // none, active, expired, cancelled
+  timezone              String?
 
   // Pricing tier
-  tier              UserTier  @default(FREE)
-  dailyRsiUsed      Int       @default(0)
-  dailyBiasUsed     Int       @default(0)
-  dailyQuotaResetAt DateTime  @default(now())
+  tier              UserTier @default(FREE)
+  dailyRsiUsed      Int      @default(0)
+  dailyBiasUsed     Int      @default(0)
+  dailyQuotaResetAt DateTime @default(now())
 
   // Affiliate
-  referrerId        String?   // userId of who referred this user
-  affiliateCode     String?   @unique  // unique code for sharing
+  referrerId    String? // userId of who referred this user
+  affiliateCode String? @unique // unique code for sharing
 
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
-  payments            Payment[]
-  refreshTokens       RefreshToken[]
-  userSubscriptions   UserSubscription[]
-  alertSubscriptions  AlertSubscription[]
-  affiliate           Affiliate?
-  featureAccess       FeatureAccess[]
-  oauthCodes          OAuthAuthorizationCode[]
+  payments           Payment[]
+  refreshTokens      RefreshToken[]
+  userSubscriptions  UserSubscription[]
+  alertSubscriptions AlertSubscription[]
+  affiliate          Affiliate?
+  featureAccess      FeatureAccess[]
+  oauthCodes         OAuthAuthorizationCode[]
 
   @@map("users")
 }
@@ -100,11 +99,11 @@ model AlertSubscription {
   id           String   @id @default(uuid())
   userId       String
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  symbol       String   // e.g., "BTCUSDT"
-  strategyType String   // e.g., "SUPER_ENGULFING", "RSI_DIVERGENCE", "CRT"
-  timeframes   Json?    // subset of scanner TFs for this strategy; null = all allowed for that strategy
-  directions   Json?    // e.g., ["BUY","SELL"] — null means ALL
-  minWinRate   Float?   // reserved (unused); filters are timeframes + directions only
+  symbol       String // e.g., "BTCUSDT"
+  strategyType String // e.g., "SUPER_ENGULFING", "RSI_DIVERGENCE", "CRT"
+  timeframes   Json? // subset of scanner TFs for this strategy; null = all allowed for that strategy
+  directions   Json? // e.g., ["BUY","SELL"] — null means ALL
+  minWinRate   Float? // reserved (unused); filters are timeframes + directions only
   isActive     Boolean  @default(true)
   createdAt    DateTime @default(now())
 
@@ -137,61 +136,61 @@ model Category {
 }
 
 model Subscription {
-  id            String   @id @default(uuid())
-  name          String
-  description   String?  @db.Text
-  tier          String   // SCOUT, APPRENTICE, SPECIALIST, STRATEGIST, GODFATHER
-  tierNumber    Int      @default(0) // 0-4 for sorting
-  price         Decimal  @db.Decimal(10, 2) // monthly price (legacy, use priceMonthly)
-  priceMonthly  Decimal  @db.Decimal(10, 2) // monthly price
-  priceYearly   Decimal? @db.Decimal(10, 2) // yearly price (optional)
-  duration      Int      @default(30) // in days
-  markets       Json?    // Available markets: ["crypto", "forex", "indices", "commodities"]
-  pairsLimit    Int?     // null = unlimited
-  timeframes    Json?    // Available timeframes: ["15m", "1H", "4H", "Daily"]
-  signalTypes   Json?    // Signal types: ["Standard", "REV+", "RUN+"]
-  features      Json?    // Array of features
-  limits        Json?    // Additional limits configuration
-  isPopular     Boolean  @default(false)
-  isActive      Boolean  @default(true)
-  sortOrder     Int      @default(0)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(uuid())
+  name         String
+  description  String?  @db.Text
+  tier         String // SCOUT, APPRENTICE, SPECIALIST, STRATEGIST, GODFATHER
+  tierNumber   Int      @default(0) // 0-4 for sorting
+  price        Decimal  @db.Decimal(10, 2) // monthly price (legacy, use priceMonthly)
+  priceMonthly Decimal  @db.Decimal(10, 2) // monthly price
+  priceYearly  Decimal? @db.Decimal(10, 2) // yearly price (optional)
+  duration     Int      @default(30) // in days
+  markets      Json? // Available markets: ["crypto", "forex", "indices", "commodities"]
+  pairsLimit   Int? // null = unlimited
+  timeframes   Json? // Available timeframes: ["15m", "1H", "4H", "Daily"]
+  signalTypes  Json? // Signal types: ["Standard", "REV+", "RUN+"]
+  features     Json? // Array of features
+  limits       Json? // Additional limits configuration
+  isPopular    Boolean  @default(false)
+  isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
-  users         User[]
-  courses       Course[]
+  users                User[]
+  courses              Course[]
   chapterSubscriptions ChapterSubscription[]
-  userSubscriptions UserSubscription[]
+  userSubscriptions    UserSubscription[]
 
   @@map("subscriptions")
 }
 
 model Payment {
-  id            String   @id @default(uuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id])
+  id             String   @id @default(uuid())
+  userId         String
+  user           User     @relation(fields: [userId], references: [id])
   subscriptionId String? // Link to subscription if this is a subscription payment
-  amount        Decimal  @db.Decimal(10, 2)
-  currency      String   @default("USD")
-  status        String   @default("pending") // pending, completed, failed, refunded
-  paymentMethod String?  // crypto, card, etc
-  paymentId     String?  // External payment ID (e.g., NOWPayments)
-  paymentUrl    String?
-  metadata      Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  amount         Decimal  @db.Decimal(10, 2)
+  currency       String   @default("USD")
+  status         String   @default("pending") // pending, completed, failed, refunded
+  paymentMethod  String? // crypto, card, etc
+  paymentId      String? // External payment ID (e.g., NOWPayments)
+  paymentUrl     String?
+  metadata       Json?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   @@map("payments")
 }
 
 model EmailLog {
-  id        String   @id @default(uuid())
-  to        String
-  subject   String
-  template  String?
-  status    String   @default("sent")
-  error     String?
-  sentAt    DateTime @default(now())
+  id       String   @id @default(uuid())
+  to       String
+  subject  String
+  template String?
+  status   String   @default("sent")
+  error    String?
+  sentAt   DateTime @default(now())
 
   @@index([sentAt])
   @@index([status])
@@ -199,17 +198,17 @@ model EmailLog {
 }
 
 model UserSubscription {
-  id            String   @id @default(uuid())
-  userId        String
-  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id             String       @id @default(uuid())
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   subscriptionId String
-  subscription  Subscription @relation(fields: [subscriptionId], references: [id])
-  startDate     DateTime @default(now())
-  endDate       DateTime
-  status        String   @default("active") // active, expired, cancelled
-  paymentId     String?  // Link to payment
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id])
+  startDate      DateTime     @default(now())
+  endDate        DateTime
+  status         String       @default("active") // active, expired, cancelled
+  paymentId      String? // Link to payment
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   @@map("user_subscriptions")
 }
@@ -224,139 +223,138 @@ model Course {
   isFree         Boolean       @default(false)
   subscriptionId String?
   subscription   Subscription? @relation(fields: [subscriptionId], references: [id])
-  
-  chapters       Chapter[]
-  
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+
+  chapters Chapter[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("courses")
 }
 
 model Chapter {
-  id             String        @id @default(uuid())
-  courseId       String
-  course         Course        @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  title          String
-  description    String?       @db.Text
-  coverUrl       String?
-  videoUrl       String?       // YouTube or Wistia preview video
-  difficulty     String        @default("Beginner") // Beginner, Intermediate, Advanced
-  price          Decimal       @default(0) @db.Decimal(10, 2)
-  isFree         Boolean       @default(true)
-  order          Int           @default(0)
-  
-  lessons        Lesson[]
-  subscriptions  ChapterSubscription[]
-  
-  createdAt      DateTime      @default(now())
-  updatedAt      DateTime      @updatedAt
+  id          String  @id @default(uuid())
+  courseId    String
+  course      Course  @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title       String
+  description String? @db.Text
+  coverUrl    String?
+  videoUrl    String? // YouTube or Wistia preview video
+  difficulty  String  @default("Beginner") // Beginner, Intermediate, Advanced
+  price       Decimal @default(0) @db.Decimal(10, 2)
+  isFree      Boolean @default(true)
+  order       Int     @default(0)
+
+  lessons       Lesson[]
+  subscriptions ChapterSubscription[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("chapters")
 }
 
 model ChapterSubscription {
-  id             String        @id @default(uuid())
+  id             String       @id @default(uuid())
   chapterId      String
-  chapter        Chapter       @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  chapter        Chapter      @relation(fields: [chapterId], references: [id], onDelete: Cascade)
   subscriptionId String
-  subscription   Subscription  @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
-  createdAt      DateTime      @default(now())
+  subscription   Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
 
   @@unique([chapterId, subscriptionId])
   @@map("chapter_subscriptions")
 }
 
 model Lesson {
-  id            String   @id @default(uuid())
+  id            String  @id @default(uuid())
   chapterId     String
-  chapter       Chapter  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  chapter       Chapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
   title         String
-  description   String?  @db.Text
+  description   String? @db.Text
   videoUrl      String
   videoProvider String? // youtube | wistia
   coverUrl      String?
-  order         Int      @default(0)
+  order         Int     @default(0)
 
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@map("lessons")
 }
 
 model SuperEngulfingSignal {
-  id              String        @id
-  strategyType    String        @default("SUPER_ENGULFING")
-  symbol          String
-  timeframe       String
-  signalType      String
-  price           Decimal       @db.Decimal(20, 8)
-  detectedAt      DateTime
-  
+  id           String   @id
+  strategyType String   @default("SUPER_ENGULFING")
+  symbol       String
+  timeframe    String
+  signalType   String
+  price        Decimal  @db.Decimal(20, 8)
+  detectedAt   DateTime
+
   // Existing Lifecycle Fields (kept for backward compat with other strategies)
   lifecycleStatus SignalStatus  @default(PENDING)
   result          SignalResult?
-  
+
   // LEGACY SE TRACKING FIELDS — DEPRECATED. Do not add new readers/writers.
   // se_close_reason is shared with CRT/3OB scanners (1206 non-SE rows rely on it).
   // Slated for removal in a future PR after frontend SignalDetails/InteractiveLiveChart/
   // SignalStatusBadge refactor to drop fallback `??` reads of these columns.
-  direction       String?       // "BULL" or "BEAR" (legacy)
-  se_entry_zone   Float?        // Signal candle close (entry price) - legacy
-  se_sl           Float?        // Initial wick SL - legacy
-  se_tp1          Float?        // 2R target - legacy
-  se_tp2          Float?        // 3R target - legacy
-  se_current_sl   Float?        // Starts = se_sl - legacy
-  se_r_ratio_hit  Boolean       @default(false)  // Has 2R been reached? - legacy
-  se_close_price  Float?        // Actual price signal was closed at - legacy
-  se_close_reason String?       // "TP2", "SL", "OPPOSITE_REV", "EXPIRED" - legacy
+  direction       String? // "BULL" or "BEAR" (legacy)
+  se_entry_zone   Float? // Signal candle close (entry price) - legacy
+  se_sl           Float? // Initial wick SL - legacy
+  se_tp1          Float? // 2R target - legacy
+  se_tp2          Float? // 3R target - legacy
+  se_current_sl   Float? // Starts = se_sl - legacy
+  se_r_ratio_hit  Boolean @default(false) // Has 2R been reached? - legacy
+  se_close_price  Float? // Actual price signal was closed at - legacy
+  se_close_reason String? // "TP2", "SL", "OPPOSITE_REV", "EXPIRED" - legacy
 
-  candles_tracked Int           @default(0)
-  max_candles     Int           @default(20)
+  candles_tracked  Int       @default(0)
+  max_candles      Int       @default(20)
   entryConfirmedAt DateTime?
 
   // ============================================
   // SE SCANNER V2 FIELDS (per new specification)
   // ============================================
-  type_v2         String?       // always "se"
-  pattern_v2      String?       // one of 8: REV_BULLISH, REV_BEARISH, REV_PLUS_BULLISH, REV_PLUS_BEARISH, RUN_BULLISH, RUN_BEARISH, RUN_PLUS_BULLISH, RUN_PLUS_BEARISH
-  direction_v2    String?       // "bullish" or "bearish"
-  
-  entry_price     Float?        // se_candle.close - THE entry price
-  sl_price        Float?        // Original SL - NEVER changes after init
-  current_sl_price Float?       // Starts at sl_price, moves to entry_price after TP1 hit
-  tp1_price       Float?        // 1:1.5 RR target — close 50%
-  tp2_price       Float?        // 1:2 RR target — close 25%
-  tp3_price       Float?        // 1:3 RR target — close 25% (full win)
-  
-  tp1_hit         Boolean       @default(false)   // Has TP1 been reached?
-  tp2_hit         Boolean       @default(false)   // Has TP2 been reached?
-  tp3_hit         Boolean       @default(false)   // Has TP3 been reached?
-  
-  close_price     Float?        // The price at which signal closed (preset level or market price at expiry)
-  
-  candle_count    Int           @default(0)       // Starts at 0, increments on each candle close
-  
-  triggered_at    DateTime?     // When signal went live
-  closed_at_v2    DateTime?     // When signal closed - null while live
-  delete_at       DateTime?     // closed_at + 48h - when to hard delete
+  type_v2      String? // always "se"
+  pattern_v2   String? // one of 8: REV_BULLISH, REV_BEARISH, REV_PLUS_BULLISH, REV_PLUS_BEARISH, RUN_BULLISH, RUN_BEARISH, RUN_PLUS_BULLISH, RUN_PLUS_BEARISH
+  direction_v2 String? // "bullish" or "bearish"
+
+  entry_price      Float? // se_candle.close - THE entry price
+  sl_price         Float? // Original SL - NEVER changes after init
+  current_sl_price Float? // Starts at sl_price, moves to entry_price after TP1 hit
+  tp1_price        Float? // 1:1.5 RR target — close 50%
+  tp2_price        Float? // 1:2 RR target — close 25%
+  tp3_price        Float? // 1:3 RR target — close 25% (full win)
+
+  tp1_hit Boolean @default(false) // Has TP1 been reached?
+  tp2_hit Boolean @default(false) // Has TP2 been reached?
+  tp3_hit Boolean @default(false) // Has TP3 been reached?
+
+  close_price Float? // The price at which signal closed (preset level or market price at expiry)
+
+  candle_count Int @default(0) // Starts at 0, increments on each candle close
+
+  triggered_at DateTime? // When signal went live
+  closed_at_v2 DateTime? // When signal closed - null while live
+  delete_at    DateTime? // closed_at + 48h - when to hard delete
 
   // ICT BIAS FIELDS
-  bias_direction    String?       // "BULL" or "BEAR"
-  bias_level        Float?        // The close price that confirmed bias
-  bias_result       String?       // "WIN" or "FAILED"
-  bias_validated_at DateTime?     // When next candle closed
+  bias_direction    String? // "BULL" or "BEAR"
+  bias_level        Float? // The close price that confirmed bias
+  bias_result       String? // "WIN" or "FAILED"
+  bias_validated_at DateTime? // When next candle closed
 
-  metadata        Json?
-  closedAt        DateTime?
-  closedPrice     Decimal?      @db.Decimal(20, 8)
-  pnlPercent      Float?
-  createdAt       DateTime      @default(now())
-  updatedAt       DateTime      @updatedAt
+  metadata    Json?
+  closedAt    DateTime?
+  closedPrice Decimal?  @db.Decimal(20, 8)
+  pnlPercent  Float?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([strategyType, detectedAt(sort: Desc)])
   @@index([strategyType, symbol, timeframe])
-
   @@map("super_engulfing_signals")
 }
 
@@ -368,44 +366,44 @@ model Affiliate {
   id          String   @id @default(uuid())
   userId      String   @unique
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  code        String   @unique  // e.g. "TRADER123"
-  tier        String   @default("STANDARD")  // STANDARD(30%), ELITE(40%), AGENCY(20%)
+  code        String   @unique // e.g. "TRADER123"
+  tier        String   @default("STANDARD") // STANDARD(30%), ELITE(40%), AGENCY(20%)
   totalSales  Int      @default(0)
   totalEarned Float    @default(0)
   cookieDays  Int      @default(90)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
 
-  referrals   AffiliateReferral[]
-  payouts     AffiliatePayout[]
+  referrals AffiliateReferral[]
+  payouts   AffiliatePayout[]
 
   @@map("affiliates")
 }
 
 model AffiliateReferral {
-  id             String   @id @default(uuid())
+  id             String    @id @default(uuid())
   affiliateId    String
   affiliate      Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
-  referredUserId String   @unique
+  referredUserId String    @unique
   paymentAmount  Float?
   commission     Float?
-  status         String   @default("REGISTERED") // REGISTERED, CONVERTED, CHURNED
-  createdAt      DateTime @default(now())
+  status         String    @default("REGISTERED") // REGISTERED, CONVERTED, CHURNED
+  createdAt      DateTime  @default(now())
 
   @@map("affiliate_referrals")
 }
 
 model AffiliatePayout {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   affiliateId String
   affiliate   Affiliate @relation(fields: [affiliateId], references: [id], onDelete: Cascade)
   amount      Float
-  currency    String   @default("USDT")
-  network     String   @default("TRC20")
+  currency    String    @default("USDT")
+  network     String    @default("TRC20")
   walletAddr  String?
   txHash      String?
-  status      String   @default("PENDING") // PENDING, PROCESSED, FAILED
-  createdAt   DateTime @default(now())
+  status      String    @default("PENDING") // PENDING, PROCESSED, FAILED
+  createdAt   DateTime  @default(now())
 
   @@map("affiliate_payouts")
 }
@@ -414,9 +412,9 @@ model FeatureAccess {
   id        String    @id @default(uuid())
   userId    String
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  feature   String    // super_engulfing, ict_bias, rsi_divergence, crt, telegram_alerts, academy, tools, watchlist, all
+  feature   String // super_engulfing, ict_bias, rsi_divergence, crt, telegram_alerts, academy, tools, watchlist, all
   expiresAt DateTime? // null = lifetime
-  grantedBy String?   // admin userId who granted
+  grantedBy String? // admin userId who granted
   createdAt DateTime  @default(now())
 
   @@unique([userId, feature])
@@ -444,4 +442,99 @@ model CandleSnapshot {
 
   @@unique([symbol, interval])
   @@map("candle_snapshots")
+}
+
+// ============================================================
+// Core-Layer — alignment detection layer on top of SE/CRT/BIAS.
+// See /backend/docs/CORE_LAYER_ADR.md for the 16 locked decisions.
+// Phase 4 (this migration) introduces the DB surface; runtime
+// detection is gated by CORE_LAYER_ENABLED (default false).
+// ============================================================
+
+enum CoreLayerVariant {
+  SE
+  CRT
+  BIAS
+
+  @@map("core_layer_variant")
+}
+
+enum CoreLayerDirection {
+  BUY
+  SELL
+
+  @@map("core_layer_direction")
+}
+
+enum CoreLayerAnchor {
+  WEEKLY
+  DAILY
+  FOURHOUR
+
+  @@map("core_layer_anchor")
+}
+
+enum CoreLayerStatus {
+  ACTIVE
+  CLOSED
+
+  @@map("core_layer_status")
+}
+
+/// One Core-Layer signal = one chain of aligned TFs for a (pair, variant, direction, anchor) tuple.
+/// Unique index below enforces at most one ACTIVE chain per that tuple (per ADR D10).
+model CoreLayerSignal {
+  id                String                  @id @default(cuid())
+  pair              String
+  variant           CoreLayerVariant
+  direction         CoreLayerDirection
+  anchor            CoreLayerAnchor
+  /// Chain of TFs in canonical order, e.g. ["W","1D","4H","1H"]. Depth = chain.length.
+  chain             String[]
+  depth             Int
+  /// Flagged high-correlation pairings (e.g. [["1D","1H"]]) derived from CORRELATION_PAIRS.
+  correlationPairs  Json
+  /// Per-TF life-state as computed by the lifecycle service. Stored literally — the API
+  /// layer applies the HTF (W/1D) -> "steady" override per ADR D13 on the way out.
+  tfLifeState       Json
+  /// Per-TF ms-epoch of the signal candle's close. Used to re-derive life state.
+  tfLastCandleClose Json
+  /// SE variant only: per-TF pattern kind (REV/REV+/RUN/RUN+).
+  sePerTf           Json?
+  /// SE variant only: "all" | "dominant" | "none" rollup of plusPerTf.
+  plusSummary       String?
+  status            CoreLayerStatus         @default(ACTIVE)
+  detectedAt        DateTime                @default(now())
+  lastPromotedAt    DateTime                @default(now())
+  closedAt          DateTime?
+  history           CoreLayerHistoryEntry[]
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  @@unique([pair, variant, direction, anchor, status], name: "pair_variant_dir_anchor_status")
+  @@index([variant, status])
+  @@index([pair])
+  @@index([lastPromotedAt])
+  @@map("core_layer_signals")
+}
+
+/// Append-only audit log of lifecycle events on a CoreLayerSignal.
+model CoreLayerHistoryEntry {
+  id         String          @id @default(cuid())
+  signalId   String
+  signal     CoreLayerSignal @relation(fields: [signalId], references: [id], onDelete: Cascade)
+  at         DateTime
+  /// "created" | "promoted" | "demoted" | "anchor_changed" | "closed"
+  event      String
+  fromDepth  Int?
+  toDepth    Int?
+  fromAnchor String?
+  toAnchor   String?
+  tfAdded    String?
+  tfRemoved  String?
+  note       String?
+  createdAt  DateTime        @default(now())
+
+  @@index([signalId, at])
+  @@map("core_layer_history_entries")
 }
