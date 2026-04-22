@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { IExchangeProvider, IKline } from './data-provider.interface';
+import { IExchangeProvider, IKline, ITicker24h } from './data-provider.interface';
 
 /**
  * Async-safe rate limiter per API key.
@@ -355,6 +355,35 @@ export class BinanceProvider implements IExchangeProvider {
         } catch (err) {
             const msg = err instanceof Error ? err.message : String(err);
             this.logger.error(`Failed to fetch Binance 24h volumes: ${msg}`);
+        }
+        return map;
+    }
+
+    async get24hTickers(): Promise<Map<string, ITicker24h>> {
+        const map = new Map<string, ITicker24h>();
+        try {
+            const apiKey = this.getNextApiKey();
+            const res = await this.fetchWithRetry(
+                'https://fapi.binance.com/fapi/v1/ticker/24hr',
+                apiKey,
+                1,
+            );
+
+            if (!res.ok) {
+                this.logger.error(`Binance 24hr ticker API returned ${res.status}`);
+                return map;
+            }
+
+            const tickers = await res.json();
+            for (const t of tickers) {
+                const price = parseFloat(t.lastPrice);
+                const change24h = parseFloat(t.priceChangePercent);
+                if (!Number.isFinite(price) || !Number.isFinite(change24h)) continue;
+                map.set(t.symbol, { price, change24h });
+            }
+        } catch (err) {
+            const msg = err instanceof Error ? err.message : String(err);
+            this.logger.error(`Failed to fetch Binance 24h tickers: ${msg}`);
         }
         return map;
     }
