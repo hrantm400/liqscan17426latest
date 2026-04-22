@@ -16,6 +16,8 @@ import { UserTier } from '@prisma/client';
 import { AdminService } from './admin.service';
 import { AdminGuard } from './guards/admin.guard';
 import { UserThrottlerGuard } from '../common/throttler/user-throttler.guard';
+import { CoreLayerAdminService } from '../core-layer/core-layer.admin.service';
+import { SetCoreLayerEnabledDto } from '../core-layer/dto/set-core-layer-enabled.dto';
 
 // PR 3.3 — admin mutations are user-tracked (not IP-tracked) so one
 // admin accidentally hammering the refund endpoint from home WiFi
@@ -24,7 +26,10 @@ import { UserThrottlerGuard } from '../common/throttler/user-throttler.guard';
 @Controller('admin')
 @UseGuards(AdminGuard, UserThrottlerGuard)
 export class AdminController {
-  constructor(private adminService: AdminService) {}
+  constructor(
+    private adminService: AdminService,
+    private coreLayerAdmin: CoreLayerAdminService,
+  ) {}
 
   // Analytics
   @Get('analytics')
@@ -234,5 +239,38 @@ export class AdminController {
   @Throttle({ burst: { limit: 5, ttl: 300000 } })
   async testSmtp(@Body() data: { to?: string }) {
     return this.adminService.testSmtp(data?.to);
+  }
+
+  // -------- Core-Layer admin controls (Phase 5b) ----------------------
+  // Three endpoints covering the full control surface exposed on the
+  // /admin/settings page. Throttling is per-admin via UserThrottlerGuard
+  // + the `strict` named throttler (10/60s default). Stats is the only
+  // read and gets a wider 60/60s window because the admin UI polls it
+  // on a 10-second interval when the card is open.
+
+  @Get('core-layer/stats')
+  @Throttle({ strict: { limit: 60, ttl: 60000 } })
+  async getCoreLayerStats() {
+    return this.coreLayerAdmin.getStats();
+  }
+
+  @Post('core-layer/enabled')
+  @Throttle({ strict: { limit: 10, ttl: 60000 } })
+  async setCoreLayerEnabled(
+    @Body() body: SetCoreLayerEnabledDto,
+    @Req() req: any,
+  ) {
+    return this.coreLayerAdmin.setEnabled(Boolean(body?.enabled), req.user?.userId);
+  }
+
+  @Post('core-layer/force-rescan')
+  // Force-rescan kicks off a synchronous detection pass. Keep the
+  // limit tight: one rescan clears ACTIVE rows and rebuilds from live
+  // upstream signals, and hammering it would just re-run work. 3/60s
+  // is enough for "toggle, wait, retry" without being accidentally
+  // destructive.
+  @Throttle({ strict: { limit: 3, ttl: 60000 } })
+  async forceCoreLayerRescan() {
+    return this.coreLayerAdmin.forceRescan();
   }
 }

@@ -428,6 +428,12 @@ model AppConfig {
   cisdPivotLeft         Int      @default(5)
   cisdPivotRight        Int      @default(2)
   cisdMinConsecutive    Int      @default(2)
+  // Phase 5b — Core-Layer runtime flag. NULL means "never touched, fall
+  // back to CORE_LAYER_ENABLED env". Populated on first boot after
+  // migration by CoreLayerRuntimeFlagService; thereafter AppConfig is
+  // the source of truth and admin writes go through
+  // POST /api/admin/core-layer/enabled.
+  coreLayerEnabled      Boolean?
   updatedAt             DateTime @updatedAt
 
   @@map("app_config")

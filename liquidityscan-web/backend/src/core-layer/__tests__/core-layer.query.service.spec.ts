@@ -1,13 +1,8 @@
 /**
- * Query-service tests. Feature-flag is patched via a module-level getter so a
- * single test file can exercise both the flag-on and flag-off branches.
+ * Query-service tests. Runtime flag is provided via a minimal fake that
+ * exposes just `isEnabled()` — the query service only reads the flag, it
+ * never writes or records telemetry through this dependency.
  */
-const mockFlag = { value: true };
-jest.mock('../core-layer.feature-flag', () => ({
-    get isCoreLayerEnabled() {
-        return mockFlag.value;
-    },
-}));
 
 import { CoreLayerQueryService } from '../core-layer.query.service';
 import { TF_CANDLE_MS } from '../core-layer.constants';
@@ -28,9 +23,20 @@ class FakeTickerCache {
     }
 }
 
+class FakeRuntimeFlag {
+    private enabled = true;
+    setEnabledForTest(v: boolean): void {
+        this.enabled = v;
+    }
+    isEnabled(): boolean {
+        return this.enabled;
+    }
+}
+
 describe('CoreLayerQueryService', () => {
     let prisma: FakePrismaService;
     let ticker: FakeTickerCache;
+    let runtimeFlag: FakeRuntimeFlag;
     let service: CoreLayerQueryService;
     const now = Date.UTC(2026, 3, 22, 12, 0, 0);
 
@@ -45,8 +51,13 @@ describe('CoreLayerQueryService', () => {
     beforeEach(() => {
         prisma = new FakePrismaService();
         ticker = new FakeTickerCache();
-        service = new CoreLayerQueryService(prisma as any, ticker as any);
-        mockFlag.value = true;
+        runtimeFlag = new FakeRuntimeFlag();
+        service = new CoreLayerQueryService(
+            prisma as any,
+            ticker as any,
+            runtimeFlag as any,
+        );
+        runtimeFlag.setEnabledForTest(true);
     });
 
     function seedSignal(overrides: Partial<Record<string, any>> = {}) {
@@ -78,7 +89,7 @@ describe('CoreLayerQueryService', () => {
 
     describe('flag off', () => {
         beforeEach(() => {
-            mockFlag.value = false;
+            runtimeFlag.setEnabledForTest(false);
         });
         it('returns empty + enabled:false for list', async () => {
             seedSignal();

@@ -73,6 +73,55 @@ export async function bootstrapAuth(): Promise<boolean> {
 
 const API_BASE_URL = getApiBaseUrl();
 
+// Core-Layer admin response types (Phase 5b). Kept in this file rather
+// than a standalone types module because the whole admin API surface
+// already lives here and the admin card is the only consumer.
+export interface AdminCoreLayerRuntimeStatus {
+  enabled: boolean;
+  envSeed: boolean;
+  lastSuccessfulTickAt: number | null;
+  lastTickDurationMs: number | null;
+  lastTickNumber: number;
+  consecutiveFailures: number;
+  recentErrors: Array<{
+    at: number;
+    message: string;
+    tickNumber: number;
+  }>;
+}
+
+export interface AdminCoreLayerStatsResponse {
+  runtime: AdminCoreLayerRuntimeStatus;
+  activeSignalCount: {
+    total: number;
+    byVariant: Record<'SE' | 'CRT' | 'BIAS', number>;
+    byAnchor: Record<'WEEKLY' | 'DAILY' | 'FOURHOUR', number>;
+    byVariantAndAnchor: Array<{
+      variant: 'SE' | 'CRT' | 'BIAS';
+      anchor: 'WEEKLY' | 'DAILY' | 'FOURHOUR';
+      count: number;
+    }>;
+  };
+}
+
+export interface AdminCoreLayerSetEnabledResponse {
+  enabled: boolean;
+  previousEnabled: boolean;
+}
+
+export interface AdminCoreLayerForceRescanResponse {
+  wiped: number;
+  detection: {
+    created: number;
+    promoted: number;
+    demoted: number;
+    anchorChanged: number;
+    closed: number;
+    scannedVariants: number;
+  };
+  elapsedMs: number;
+}
+
 class ApiClient {
   private baseUrl: string;
   private getToken: () => string | null;
@@ -466,6 +515,30 @@ class ApiClient {
       method: 'POST',
       body: JSON.stringify({ to }),
     });
+  }
+
+  // Core-Layer admin controls (Phase 5b). Shapes mirror the backend DTOs
+  // in liquidityscan-web/backend/src/core-layer/dto/core-layer-admin.dto.ts
+  // and liquidityscan-web/backend/src/core-layer/core-layer.runtime-flag.service.ts.
+  async getAdminCoreLayerStats() {
+    return this.request<AdminCoreLayerStatsResponse>('/admin/core-layer/stats');
+  }
+
+  async setAdminCoreLayerEnabled(enabled: boolean) {
+    return this.request<AdminCoreLayerSetEnabledResponse>(
+      '/admin/core-layer/enabled',
+      {
+        method: 'POST',
+        body: JSON.stringify({ enabled }),
+      },
+    );
+  }
+
+  async forceAdminCoreLayerRescan() {
+    return this.request<AdminCoreLayerForceRescanResponse>(
+      '/admin/core-layer/force-rescan',
+      { method: 'POST' },
+    );
   }
 
   // Courses
