@@ -8,6 +8,10 @@ import type { CoreLayerSignal, TF, TFLifeState } from '../../core-layer/types';
 interface Props {
   signal: CoreLayerSignal;
   tf: TF;
+  /**
+   * Max number of real candles fetched and rendered. Default 40 matches
+   * the monitor-page mini charts.
+   */
   candleCount?: number;
   /**
    * Reference "now" for time-ago and breathing-phase math. Defaults to
@@ -29,9 +33,13 @@ interface Props {
  *   - breathing phase 2/2 → darker amber (amber-700/70)
  *   - steady              → default hairline (matches existing cards)
  *
- * All static — no motion anywhere in the tile per Phase 1 redesign spec.
+ * The chart body itself is `CoreLayerChart`, which fetches real OHLCV
+ * from `GET /candles/:symbol/:interval` and renders a mini-candlestick
+ * matching the scanner monitors' visual language. The signal candle
+ * (the one whose close matches `signal.tfLastCandleClose[tf]`) is
+ * highlighted so the viewer can see where the alignment fired.
  */
-export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 7, now = MOCK_NOW }) => {
+export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 40, now = MOCK_NOW }) => {
   const state: TFLifeState = signal.tfLifeState[tf] ?? 'steady';
   const tfClose = signal.tfLastCandleClose[tf] ?? now;
   const phase = computeBreathingPhase(tf, tfClose, now);
@@ -67,13 +75,13 @@ export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 
         pair={signal.pair}
         tf={tf}
         direction={signal.direction}
-        seedPrice={signal.price > 0 ? signal.price : 100}
+        signalCloseMs={signal.tfLastCandleClose[tf] ?? null}
         candleCount={candleCount}
         lifeState={state}
       />
 
       <footer className="flex items-center justify-between gap-2 text-[10px] font-mono">
-        <span className="dark:text-gray-500 light:text-slate-400">{candleCount} candles</span>
+        <span className="dark:text-gray-500 light:text-slate-400">Last {candleCount} candles</span>
         <a
           href={tvUrl(signal.pair, tf)}
           target="_blank"
