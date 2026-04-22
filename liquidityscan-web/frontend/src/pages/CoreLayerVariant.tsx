@@ -8,6 +8,7 @@ import { ProLabelPill } from '../components/subscriptions/ProLabelPill';
 import { ViewAsTierToggle } from '../components/core-layer/ViewAsTierToggle';
 import { UpgradeModal } from '../components/core-layer/UpgradeModal';
 import { IntroVideoPill } from '../components/core-layer/IntroVideoPill';
+import { CoreLayerState } from '../components/core-layer/CoreLayerState';
 import { getMockSignalsByVariant } from '../core-layer/mockCoreLayerData';
 import {
   ANCHOR_FROM_URL,
@@ -15,7 +16,8 @@ import {
   VARIANT_FROM_SLUG,
   VARIANT_META,
 } from '../core-layer/constants';
-import type { AnchorType } from '../core-layer/types';
+import { useCoreLayerSignals, useCoreLayerStats } from '../hooks/useCoreLayer';
+import type { AnchorType, CoreLayerSignal } from '../core-layer/types';
 
 type TabView = 'all' | 'live' | 'closed';
 
@@ -33,6 +35,12 @@ const TABS: ReadonlyArray<{ key: TabView; label: string; icon: string }> = [
  *
  * Shift+P debug hotkey (dev only) triggers the one-shot promotion animation
  * on a random card — spec line 143.
+ *
+ * Phase 5: reads from the live backend via useCoreLayerSignals (keyed on
+ * variant + status, anchor filtered client-side so AnchorSelectorCards can
+ * render non-zero counts for inactive anchors). Falls back to
+ * getMockSignalsByVariant when stats.enabled is false or the list query
+ * fails — matches the rollback contract used on the overview page.
  */
 export const CoreLayerVariant: React.FC = () => {
   const { variant: variantSlug } = useParams<{ variant: string }>();
@@ -44,13 +52,38 @@ export const CoreLayerVariant: React.FC = () => {
 
   const anchorParam = searchParams.get('anchor') ?? '';
   const tabParam = (searchParams.get('tab') ?? 'all') as TabView;
-  const activeAnchor: AnchorType | 'all' = ANCHOR_FROM_URL[anchorParam] ?? 'all';
+  // ANCHOR_FROM_URL is typed `Record<string, AnchorType>` which TS treats as
+  // total, so the nullish branch would be unreachable. Widen explicitly.
+  const activeAnchor: AnchorType | 'all' =
+    (ANCHOR_FROM_URL[anchorParam] as AnchorType | undefined) ?? 'all';
   const activeTab: TabView = TABS.some((t) => t.key === tabParam) ? tabParam : 'all';
 
-  const allSignals = useMemo(
-    () => (variant ? getMockSignalsByVariant(variant) : []),
-    [variant],
+  // Stats drives the live/mock source decision, consistent with the overview page.
+  const statsQuery = useCoreLayerStats();
+  const enabled = statsQuery.data?.enabled ?? false;
+
+  // Fetch ACTIVE + CLOSED for the variant separately so the anchor counter
+  // row and the three tabs all have their data without requery on tab flip.
+  // Limit=200 comfortably covers realistic scale — backend caps at 200 and
+  // the variant view's own design target is a handful of deeply-aligned pairs.
+  const activeQuery = useCoreLayerSignals(
+    variant ? { variant, status: 'ACTIVE', limit: 200 } : { limit: 1 },
   );
+  const closedQuery = useCoreLayerSignals(
+    variant ? { variant, status: 'CLOSED', limit: 200 } : { limit: 1 },
+  );
+
+  const liveSignals: CoreLayerSignal[] = useMemo(() => {
+    if (!enabled) return [];
+    const act = activeQuery.data?.enabled ? activeQuery.data.signals : [];
+    const cls = closedQuery.data?.enabled ? closedQuery.data.signals : [];
+    return [...act, ...cls];
+  }, [enabled, activeQuery.data, closedQuery.data]);
+
+  const allSignals: CoreLayerSignal[] = useMemo(() => {
+    if (enabled && liveSignals.length > 0) return liveSignals;
+    return variant ? getMockSignalsByVariant(variant) : [];
+  }, [enabled, liveSignals, variant]);
 
   const filtered = useMemo(() => {
     return allSignals.filter((s) => {
@@ -75,7 +108,7 @@ export const CoreLayerVariant: React.FC = () => {
   // Shift+P — dev-only promotion demo. Picks one visible active signal and
   // pulses it for 1.2s. Disabled in production per spec line 143.
   useEffect(() => {
-    if (process.env.NODE_ENV === 'production') return;
+    if (!import.meta.env.DEV) return;
     const onKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       const editable =
@@ -108,6 +141,9 @@ export const CoreLayerVariant: React.FC = () => {
     else next.set('tab', t);
     setSearchParams(next);
   };
+
+  const isLoading = enabled && (activeQuery.isLoading || closedQuery.isLoading) && allSignals.length === 0;
+  const isError = enabled && (activeQuery.isError || closedQuery.isError) && allSignals.length === 0;
 
   return (
     <div className="flex flex-col gap-5 pb-10">
@@ -176,7 +212,19 @@ export const CoreLayerVariant: React.FC = () => {
           </label>
         </div>
 
-        <DepthGrid signals={filtered} justPromotedIds={justPromotedIds} />
+        {isLoading ? (
+          <CoreLayerState kind="loading" />
+        ) : isError ? (
+          <CoreLayerState
+            kind="error"
+            onRetry={() => {
+              activeQuery.refetch();
+              closedQuery.refetch();
+            }}
+          />
+        ) : (
+          <DepthGrid signals={filtered} justPromotedIds={justPromotedIds} />
+        )}
 
         <p className="text-[11px] dark:text-gray-500 light:text-slate-400 text-center">
           <button
