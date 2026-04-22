@@ -1,24 +1,29 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { CoreLayerController } from './core-layer.controller';
 import { CoreLayerDetectionService } from './core-layer.detection.service';
 import { CoreLayerLifecycleService } from './core-layer.lifecycle.service';
+import { CoreLayerQueryService } from './core-layer.query.service';
 
 /**
  * Core-Layer backend module — Phase 4.
  *
- * Detection + lifecycle services are registered here so they are available
- * via Nest DI to any other module that wants to call them (commit 4 wires
- * ScannerService from the signals module to invoke runDetection() after each
- * hourly scan pass). The query service + REST controller are added in
- * commit 3.
+ * Wires three services and one controller:
+ *   - CoreLayerDetectionService  — hourly scan-side write path.
+ *   - CoreLayerLifecycleService  — owns core_layer_signals writes.
+ *   - CoreLayerQueryService      — REST read path, applies HTF override.
+ *   - CoreLayerController        — GET /core-layer/{signals,signals/:id,stats}.
  *
- * The module ships registered unconditionally, but runtime behaviour is
- * gated by the CORE_LAYER_ENABLED env var (wired in commit 4). With the flag
- * off, the services exist but are never called.
+ * All three services are exported so ScannerService (commit 4) and any
+ * future admin tooling can depend on them without re-registering. The
+ * runtime path is still gated by CORE_LAYER_ENABLED — with the flag off,
+ * the controller returns `{ enabled: false }` and detection is never
+ * invoked from the scanner.
  */
 @Module({
     imports: [PrismaModule],
-    providers: [CoreLayerDetectionService, CoreLayerLifecycleService],
-    exports: [CoreLayerDetectionService, CoreLayerLifecycleService],
+    controllers: [CoreLayerController],
+    providers: [CoreLayerDetectionService, CoreLayerLifecycleService, CoreLayerQueryService],
+    exports: [CoreLayerDetectionService, CoreLayerLifecycleService, CoreLayerQueryService],
 })
 export class CoreLayerModule {}
