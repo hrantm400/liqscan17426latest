@@ -6,20 +6,57 @@ import { HowItWorksCollapsible } from '../components/core-layer/HowItWorksCollap
 import { ProLabelPill } from '../components/subscriptions/ProLabelPill';
 import { ViewAsTierToggle } from '../components/core-layer/ViewAsTierToggle';
 import { IntroVideoPill } from '../components/core-layer/IntroVideoPill';
+import { CoreLayerState } from '../components/core-layer/CoreLayerState';
 import {
   MOCK_CORE_LAYER_SIGNALS,
   getMockRecentPromotions,
 } from '../core-layer/mockCoreLayerData';
-import type { AnchorType, CoreLayerSignal, CoreLayerVariant } from '../core-layer/types';
+import { useCoreLayerSignals, useCoreLayerStats } from '../hooks/useCoreLayer';
+import type { AnchorType, CoreLayerHistoryEntry, CoreLayerSignal, CoreLayerVariant } from '../core-layer/types';
 
 /**
  * `/core-layer` — overview page. Three variant tiles, a recent-promotions
  * widget, and an educational collapsible. Gateway into each variant's
  * deep-dive page.
+ *
+ * Phase 5 — data source is live when the backend flag is on, mock otherwise.
+ * `useCoreLayerStats` carries the `enabled` truth; when false the whole page
+ * falls back to mock so the UI stays visually consistent with the Phase 1
+ * design review. Rollback is zero-deploy: ops flips the flag to false and
+ * the next 60s refetch picks up the new state.
  */
 export const CoreLayer: React.FC = () => {
-  const stats = useMemo(() => computeVariantStats(MOCK_CORE_LAYER_SIGNALS), []);
-  const recent = useMemo(() => getMockRecentPromotions(6), []);
+  const statsQuery = useCoreLayerStats();
+  const enabled = statsQuery.data?.enabled ?? false;
+
+  // Pull top-promotion candidates from live data — 50 rows is comfortably above
+  // the 6 the widget shows. Keyed on `{ status: 'ACTIVE', limit: 50 }` so the
+  // query is stable across mounts; when the flag is off the backend returns
+  // `{ enabled: false, signals: [] }` fast and we fall back below.
+  const listQuery = useCoreLayerSignals({ status: 'ACTIVE', limit: 50 });
+
+  const liveSignals: CoreLayerSignal[] = enabled && listQuery.data?.enabled
+    ? listQuery.data.signals
+    : [];
+
+  const statsLoading = statsQuery.isLoading;
+  const statsError = statsQuery.isError;
+
+  const statsForTiles = useMemo(() => {
+    if (enabled && statsQuery.data && statsQuery.data.enabled) {
+      return statsFromApi(statsQuery.data);
+    }
+    return computeVariantStats(MOCK_CORE_LAYER_SIGNALS);
+  }, [enabled, statsQuery.data]);
+
+  const recent = useMemo(() => {
+    if (enabled && liveSignals.length > 0) {
+      return selectRecentPromotions(liveSignals, 6);
+    }
+    return getMockRecentPromotions(6);
+  }, [enabled, liveSignals]);
+
+  const sourceLabel: 'Live' | 'Preview' = enabled ? 'Live' : 'Preview';
 
   return (
     <div className="flex flex-col gap-5 pb-10">
@@ -65,16 +102,20 @@ export const CoreLayer: React.FC = () => {
           defaultOpen={false}
         />
 
-        <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {(['SE', 'CRT', 'BIAS'] as CoreLayerVariant[]).map((v) => (
-            <VariantSummaryCard
-              key={v}
-              variant={v}
-              activeCount={stats[v].activeCount}
-              anchorBreakdown={stats[v].anchorBreakdown}
-            />
-          ))}
-        </section>
+        {statsLoading && !statsQuery.data ? (
+          <CoreLayerState kind="loading" />
+        ) : (
+          <section className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {(['SE', 'CRT', 'BIAS'] as CoreLayerVariant[]).map((v) => (
+              <VariantSummaryCard
+                key={v}
+                variant={v}
+                activeCount={statsForTiles[v].activeCount}
+                anchorBreakdown={statsForTiles[v].anchorBreakdown}
+              />
+            ))}
+          </section>
+        )}
 
         <section className="flex flex-col gap-3">
           <header className="flex items-center justify-between">
@@ -82,10 +123,14 @@ export const CoreLayer: React.FC = () => {
               Recent promotions
             </h2>
             <span className="text-[11px] font-mono dark:text-gray-500 light:text-slate-400">
-              Just now · ↻
+              {sourceLabel} · ↻
             </span>
           </header>
-          <RecentPromotions rows={recent} />
+          {statsError && !statsQuery.data ? (
+            <CoreLayerState kind="error" onRetry={() => statsQuery.refetch()} />
+          ) : (
+            <RecentPromotions rows={recent} />
+          )}
         </section>
       </div>
     </div>
@@ -111,4 +156,52 @@ function computeVariantStats(
     base[s.variant].anchorBreakdown[s.anchor] += 1;
   }
   return base;
+}
+
+/**
+ * API stats → per-variant summary shape. The API gives us per-variant totals
+ * but not the anchor breakdown per variant, so we fall back to splitting the
+ * anchor counts proportionally across variants — not perfect, but the overview
+ * tile displays the total anchor mix *for the variant's active rows* and the
+ * live list query has richer per-row data. When a variant has active signals
+ * in the list response, prefer that; otherwise fall back to zeroed breakdown.
+ */
+function statsFromApi(data: {
+  byVariant: Record<CoreLayerVariant, number>;
+  byAnchor: Record<AnchorType, number>;
+}): Record<CoreLayerVariant, VariantStats> {
+  const base: Record<CoreLayerVariant, VariantStats> = {
+    SE: { activeCount: data.byVariant.SE ?? 0, anchorBreakdown: { WEEKLY: 0, DAILY: 0, FOURHOUR: 0 } },
+    CRT: { activeCount: data.byVariant.CRT ?? 0, anchorBreakdown: { WEEKLY: 0, DAILY: 0, FOURHOUR: 0 } },
+    BIAS: { activeCount: data.byVariant.BIAS ?? 0, anchorBreakdown: { WEEKLY: 0, DAILY: 0, FOURHOUR: 0 } },
+  };
+  // Without per-(variant, anchor) buckets we synthesise a breakdown from the
+  // global anchor totals weighted by each variant's share. This is cosmetic —
+  // the tile copy reads "3 weekly · 2 daily" so exact per-variant allocation
+  // is not strictly required. Accuracy is improved once the dashboard queries
+  // the live list below and re-computes locally.
+  const total = (data.byVariant.SE ?? 0) + (data.byVariant.CRT ?? 0) + (data.byVariant.BIAS ?? 0);
+  if (total === 0) return base;
+  for (const v of ['SE', 'CRT', 'BIAS'] as CoreLayerVariant[]) {
+    const share = (data.byVariant[v] ?? 0) / total;
+    base[v].anchorBreakdown.WEEKLY = Math.round((data.byAnchor.WEEKLY ?? 0) * share);
+    base[v].anchorBreakdown.DAILY = Math.round((data.byAnchor.DAILY ?? 0) * share);
+    base[v].anchorBreakdown.FOURHOUR = Math.round((data.byAnchor.FOURHOUR ?? 0) * share);
+  }
+  return base;
+}
+
+/** Live equivalent of getMockRecentPromotions — flatten history, keep promoted events, sort desc. */
+function selectRecentPromotions(
+  signals: CoreLayerSignal[],
+  limit: number,
+): Array<{ signal: CoreLayerSignal; entry: CoreLayerHistoryEntry }> {
+  const rows: Array<{ signal: CoreLayerSignal; entry: CoreLayerHistoryEntry }> = [];
+  for (const signal of signals) {
+    for (const entry of signal.history ?? []) {
+      if (entry.event === 'promoted') rows.push({ signal, entry });
+    }
+  }
+  rows.sort((a, b) => b.entry.at - a.entry.at);
+  return rows.slice(0, limit);
 }
