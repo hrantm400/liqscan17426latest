@@ -5,7 +5,7 @@ import { CandleFetchJob } from '../candles/candle-fetch.job';
 import { CandleSnapshotService } from '../candles/candle-snapshot.service';
 import { CandlesService } from '../candles/candles.service';
 import { CoreLayerDetectionService } from '../core-layer/core-layer.detection.service';
-import { isCoreLayerEnabled } from '../core-layer/core-layer.feature-flag';
+import { CoreLayerRuntimeFlagService } from '../core-layer/core-layer.runtime-flag.service';
 import { SignalsService } from './signals.service';
 import { CisdScanner } from './scanners/cisd.scanner';
 import { CrtScanner } from './scanners/crt.scanner';
@@ -69,6 +69,7 @@ export class ScannerService implements OnModuleInit, OnModuleDestroy {
         private readonly threeOBScanner: ThreeOBScanner,
         private readonly cisdScanner: CisdScanner,
         private readonly coreLayerDetection: CoreLayerDetectionService,
+        private readonly coreLayerRuntimeFlag: CoreLayerRuntimeFlagService,
     ) { }
 
     /** Whether full-market scanning (hourly + POST /signals/scan) is allowed. */
@@ -213,17 +214,26 @@ export class ScannerService implements OnModuleInit, OnModuleDestroy {
             // per-TF rows because detection reads super_engulfing_signals. Failures here are
             // swallowed on purpose — a Core-Layer regression must not leak into the base
             // signal pipeline, which is the revenue-critical path.
-            if (isCoreLayerEnabled) {
+            //
+            // Flag read at tick start only (ADR D15 + Phase 5b toggle (c)) — an in-flight
+            // tick always finishes. Telemetry is recorded via CoreLayerRuntimeFlagService
+            // so the admin `/admin/core-layer/stats` endpoint can report health.
+            if (this.coreLayerRuntimeFlag.isEnabled()) {
+                const tickNumber = this.coreLayerRuntimeFlag.recordTickStart();
                 await Sentry.withScope(async (scope) => {
                     scope.setTag('module', 'core-layer');
                     scope.setTag('core_layer.stage', 'detection');
+                    scope.setTag('core_layer.tick', String(tickNumber));
+                    const clStart = Date.now();
                     try {
-                        const clStart = Date.now();
                         const result = await this.coreLayerDetection.runDetection(start);
+                        const elapsed = Date.now() - clStart;
+                        this.coreLayerRuntimeFlag.recordTickSuccess(elapsed);
                         this.logger.log(
-                            `Core-Layer detection: created=${result.created} promoted=${result.promoted} demoted=${result.demoted} anchorChanged=${result.anchorChanged} closed=${result.closed} in ${Date.now() - clStart}ms`,
+                            `Core-Layer detection: created=${result.created} promoted=${result.promoted} demoted=${result.demoted} anchorChanged=${result.anchorChanged} closed=${result.closed} in ${elapsed}ms`,
                         );
                     } catch (err) {
+                        this.coreLayerRuntimeFlag.recordTickFailure(err);
                         const msg = err instanceof Error ? err.message : String(err);
                         this.logger.error(`Core-Layer detection failed: ${msg}`);
                         Sentry.captureException(err);

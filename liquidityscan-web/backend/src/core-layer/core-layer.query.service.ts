@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { CoreLayerSignal, CoreLayerHistoryEntry, Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { TickerCacheService } from '../ticker/ticker-cache.service';
+import { CoreLayerRuntimeFlagService } from './core-layer.runtime-flag.service';
 import {
     AnchorType,
     CoreLayerVariantKey,
@@ -18,7 +19,6 @@ import type {
     CoreLayerStatsResponseDto,
     ListCoreLayerSignalsResponseDto,
 } from './dto/core-layer-signal.dto';
-import { isCoreLayerEnabled } from './core-layer.feature-flag';
 
 /**
  * CoreLayerQueryService — read-path for the REST API.
@@ -58,15 +58,16 @@ export class CoreLayerQueryService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly ticker: TickerCacheService,
+        private readonly runtimeFlag: CoreLayerRuntimeFlagService,
     ) {}
 
     /** Public so the controller can short-circuit when the flag is off. */
     isEnabled(): boolean {
-        return isCoreLayerEnabled;
+        return this.runtimeFlag.isEnabled();
     }
 
     async listSignals(filters: ListFilters): Promise<ListCoreLayerSignalsResponseDto> {
-        if (!isCoreLayerEnabled) {
+        if (!this.runtimeFlag.isEnabled()) {
             return { signals: [], nextCursor: null, enabled: false };
         }
 
@@ -115,7 +116,7 @@ export class CoreLayerQueryService {
     }
 
     async getSignalById(id: string): Promise<CoreLayerSignalDto | null> {
-        if (!isCoreLayerEnabled) return null;
+        if (!this.runtimeFlag.isEnabled()) return null;
         const row = await this.prisma.coreLayerSignal.findUnique({
             where: { id },
             include: { history: { orderBy: { at: 'asc' } } },
@@ -125,7 +126,7 @@ export class CoreLayerQueryService {
     }
 
     async getStats(): Promise<CoreLayerStatsResponseDto> {
-        if (!isCoreLayerEnabled) {
+        if (!this.runtimeFlag.isEnabled()) {
             return {
                 total: 0,
                 byVariant: { SE: 0, CRT: 0, BIAS: 0 },

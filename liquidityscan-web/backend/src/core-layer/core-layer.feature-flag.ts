@@ -1,20 +1,21 @@
 /**
  * CORE_LAYER_ENABLED env-flag reader.
  *
- * Mirrors the MARKET_SCANNER_ENABLED pattern in ScannerService but defaults
- * to OFF (different polarity) per ADR D11. Detection + API are no-ops when
- * the flag is unset or falsy. Flipping the flag requires a backend restart
- * — we deliberately do not hot-reload so Sentry traces, log tags, and scan
- * counters are all consistent for the lifetime of a process.
+ * As of Phase 5b this file exports only the env-parse helper. The
+ * previous compile-time `isCoreLayerEnabled` const has been replaced
+ * by CoreLayerRuntimeFlagService, which calls
+ * `readCoreLayerEnabledFromEnv()` once at boot as the seed value for
+ * the AppConfig-backed runtime flag. Every in-process read of "is
+ * Core-Layer on right now?" goes through the service instead of this
+ * module, so admin-panel toggles take effect without a restart.
  *
- * The flag is read once at module import time so every reference to
- * `isCoreLayerEnabled` inside the request cycle is constant-cost.
+ * Accepted truthy env values (case-insensitive, trimmed):
+ *   '1', 'true', 'yes', 'on', 'enabled'.
+ * Everything else — including unset / empty — is treated as `false`.
  */
-function readCoreLayerEnabledFromEnv(): boolean {
+export function readCoreLayerEnabledFromEnv(): boolean {
     const v = process.env.CORE_LAYER_ENABLED;
     if (v === undefined || v === '') return false;
     const s = String(v).trim().toLowerCase();
     return ['1', 'true', 'yes', 'on', 'enabled'].includes(s);
 }
-
-export const isCoreLayerEnabled: boolean = readCoreLayerEnabledFromEnv();
