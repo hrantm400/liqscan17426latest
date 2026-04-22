@@ -52,6 +52,7 @@ export class CoreLayerController {
             direction: q.direction,
             anchor: q.anchor,
             status: q.status,
+            pair: q.pair,
             cursor: q.cursor,
             limit: q.limit,
         });

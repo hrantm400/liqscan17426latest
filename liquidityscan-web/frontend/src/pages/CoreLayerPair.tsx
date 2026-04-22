@@ -9,10 +9,16 @@ import { HowItWorksCollapsible } from '../components/core-layer/HowItWorksCollap
 import { ProLabelPill } from '../components/subscriptions/ProLabelPill';
 import { ViewAsTierToggle } from '../components/core-layer/ViewAsTierToggle';
 import { IntroVideoPill } from '../components/core-layer/IntroVideoPill';
+import { CoreLayerState } from '../components/core-layer/CoreLayerState';
 import { getMockSignalByPair } from '../core-layer/mockCoreLayerData';
 import { chainHasProTf } from '../core-layer/helpers';
-import { VARIANT_FROM_SLUG, VARIANT_META, ANCHOR_META } from '../core-layer/constants';
+import { VARIANT_FROM_SLUG, VARIANT_META, ANCHOR_META, MOCK_NOW } from '../core-layer/constants';
 import { useCoreLayerTier } from '../core-layer/TierContext';
+import {
+  useCoreLayerSignal,
+  useCoreLayerSignalByPair,
+  useCoreLayerStats,
+} from '../hooks/useCoreLayer';
 import type { CoreLayerHistoryEntry } from '../core-layer/types';
 
 /**
@@ -32,21 +38,82 @@ export const CoreLayerPair: React.FC = () => {
   const variant = variantSlug ? VARIANT_FROM_SLUG[variantSlug] : undefined;
   const { tier } = useCoreLayerTier();
 
-  const signal = useMemo(
-    () => (variant && pair ? getMockSignalByPair(variant, pair) : undefined),
-    [variant, pair],
+  // Live source wiring:
+  //   1. Stats query carries the `enabled` truth.
+  //   2. By-pair query uses the Phase 5 `pair` filter to resolve (variant, pair)
+  //      → signal id cheaply.
+  //   3. Detail query re-fetches the full row so history is not capped at 20.
+  //   4. Fallback to getMockSignalByPair when enabled=false OR the live lookups
+  //      turn up nothing (graceful degrade — keeps existing direct-link URLs
+  //      from going dead during a rollback).
+  const statsQuery = useCoreLayerStats();
+  const enabled = statsQuery.data?.enabled ?? false;
+  const byPairQuery = useCoreLayerSignalByPair(
+    enabled ? variant : undefined,
+    enabled ? pair : undefined,
   );
+  const signalId = byPairQuery.data?.id;
+  const detailQuery = useCoreLayerSignal(enabled ? signalId : undefined);
+  const liveSignal = detailQuery.data ?? byPairQuery.data ?? null;
+  const isLive = enabled && Boolean(liveSignal);
+
+  const signal = useMemo(() => {
+    if (enabled && liveSignal) return liveSignal;
+    return variant && pair ? getMockSignalByPair(variant, pair) : undefined;
+  }, [enabled, liveSignal, variant, pair]);
+
+  const liveLookupFinished =
+    !enabled ||
+    (byPairQuery.isFetched && !byPairQuery.isLoading && !detailQuery.isLoading);
+  const liveLookupFailed =
+    enabled && liveLookupFinished && !liveSignal && !byPairQuery.isError;
 
   if (!variant) return <Navigate to="/core-layer" replace />;
-  if (!signal) return <Navigate to={`/core-layer/${variantSlug}`} replace />;
+
+  // Loading: enabled + lookups still in flight + no cached/mock result yet.
+  if (enabled && !signal && !liveLookupFinished) {
+    return (
+      <div className="flex flex-col gap-5 pb-10">
+        <PageHeader breadcrumbs={[{ label: 'Core-Layer', path: '/core-layer' }, { label: pair ?? '' }]}>
+          <IntroVideoPill pageKey="pair" />
+          <ProLabelPill />
+          <ViewAsTierToggle />
+        </PageHeader>
+        <div className="px-4 md:px-6">
+          <CoreLayerState kind="loading" />
+        </div>
+      </div>
+    );
+  }
+
+  // Live said "no such pair" and mock has nothing either → bounce to variant page.
+  if (!signal) {
+    if (enabled && liveLookupFailed) {
+      return <Navigate to={`/core-layer/${variantSlug}`} replace />;
+    }
+    return <Navigate to={`/core-layer/${variantSlug}`} replace />;
+  }
 
   const variantMeta = VARIANT_META[variant];
   const anchorMeta = ANCHOR_META[signal.anchor];
   const isProGated = chainHasProTf(signal.chain);
   const blockingUpgrade = isProGated && tier === 'base';
+  const chartNow = isLive ? Date.now() : MOCK_NOW;
 
   const directionColor = signal.direction === 'BUY' ? 'text-primary' : 'text-red-400';
-  const change24hColor = signal.change24h >= 0 ? 'text-primary' : 'text-red-400';
+  // Price / change24h are placeholders on the live DTO (ADR — ticker
+  // enrichment is out of scope for Phase 5). Render "—" when zero and live
+  // so users do not see a misleading "0.00 · +0.00%".
+  const priceDisplay = isLive && signal.price === 0 ? '—' : formatPrice(signal.price);
+  const change24hDisplay =
+    isLive && signal.change24h === 0
+      ? '—'
+      : `${signal.change24h >= 0 ? '+' : ''}${signal.change24h.toFixed(2)}% 24h`;
+  const change24hColor = isLive && signal.change24h === 0
+    ? 'dark:text-gray-500 light:text-slate-400'
+    : signal.change24h >= 0
+      ? 'text-primary'
+      : 'text-red-400';
 
   return (
     <div className="flex flex-col gap-5 pb-10">
@@ -85,11 +152,10 @@ export const CoreLayerPair: React.FC = () => {
             </div>
             <div className="mt-2 flex items-center gap-3 text-sm flex-wrap">
               <span className="font-mono dark:text-gray-200 light:text-slate-700">
-                {formatPrice(signal.price)}
+                {priceDisplay}
               </span>
               <span className={`font-bold ${change24hColor}`}>
-                {signal.change24h >= 0 ? '+' : ''}
-                {signal.change24h.toFixed(2)}% 24h
+                {change24hDisplay}
               </span>
               <span className={`font-bold ${directionColor}`}>{variantMeta.shortLabel}</span>
             </div>
@@ -114,7 +180,7 @@ export const CoreLayerPair: React.FC = () => {
             style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}
           >
             {signal.chain.map((tf) => (
-              <CoreLayerChartTile key={tf} signal={signal} tf={tf} />
+              <CoreLayerChartTile key={tf} signal={signal} tf={tf} now={chartNow} />
             ))}
           </div>
         </section>

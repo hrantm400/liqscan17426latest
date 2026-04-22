@@ -29,6 +29,17 @@ export class ListCoreLayerSignalsQueryDto {
     @IsEnum(['ACTIVE', 'CLOSED'] as const)
     status?: 'ACTIVE' | 'CLOSED';
 
+    /**
+     * Exact-match pair filter (symbol), uppercased for consistency with how
+     * scanners and the DB store it. Used by the frontend pair-detail page to
+     * resolve `/core-layer/:variant/:pair` to a stable signal id without
+     * pulling the whole variant list.
+     */
+    @IsOptional()
+    @IsString()
+    @Transform(({ value }) => (typeof value === 'string' ? value.trim().toUpperCase() : value))
+    pair?: string;
+
     @IsOptional()
     @IsString()
     cursor?: string;
