@@ -9,6 +9,13 @@ interface Props {
   signal: CoreLayerSignal;
   tf: TF;
   candleCount?: number;
+  /**
+   * Reference "now" for time-ago and breathing-phase math. Defaults to
+   * `MOCK_NOW` so the mock-data preview renders deterministically with
+   * its own epoch. Phase 5 live data passes `Date.now()` so the header's
+   * "12m ago" tracks wall-clock.
+   */
+  now?: number;
 }
 
 /**
@@ -24,12 +31,12 @@ interface Props {
  *
  * All static — no motion anywhere in the tile per Phase 1 redesign spec.
  */
-export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 7 }) => {
+export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 7, now = MOCK_NOW }) => {
   const state: TFLifeState = signal.tfLifeState[tf] ?? 'steady';
-  const tfClose = signal.tfLastCandleClose[tf] ?? MOCK_NOW;
-  const phase = computeBreathingPhase(tf, tfClose, MOCK_NOW);
+  const tfClose = signal.tfLastCandleClose[tf] ?? now;
+  const phase = computeBreathingPhase(tf, tfClose, now);
   const patternKind = signal.variant === 'SE' ? signal.sePerTf?.[tf] : undefined;
-  const timeAgo = formatTimeAgo(MOCK_NOW - tfClose);
+  const timeAgo = formatTimeAgo(now - tfClose);
   const showPill = state === 'fresh' || state === 'breathing';
 
   return (
