@@ -25,6 +25,7 @@ import { AffiliateModule } from './affiliate/affiliate.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { MailModule } from './mail/mail.module';
 import { AppConfigModule } from './app-config/app-config.module';
+import { CoreLayerModule } from './core-layer/core-layer.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { AppConfigModule } from './app-config/app-config.module';
     RealtimeModule,
     MailModule,
     AppConfigModule,
+    CoreLayerModule,
   ],
   controllers: [AppController, DebugController],
   providers: [

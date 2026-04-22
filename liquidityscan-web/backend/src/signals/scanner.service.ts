@@ -1,8 +1,11 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import * as Sentry from '@sentry/node';
 import { BinanceWsManager } from '../candles/binance-ws.manager';
 import { CandleFetchJob } from '../candles/candle-fetch.job';
 import { CandleSnapshotService } from '../candles/candle-snapshot.service';
 import { CandlesService } from '../candles/candles.service';
+import { CoreLayerDetectionService } from '../core-layer/core-layer.detection.service';
+import { isCoreLayerEnabled } from '../core-layer/core-layer.feature-flag';
 import { SignalsService } from './signals.service';
 import { CisdScanner } from './scanners/cisd.scanner';
 import { CrtScanner } from './scanners/crt.scanner';
@@ -65,6 +68,7 @@ export class ScannerService implements OnModuleInit, OnModuleDestroy {
         private readonly crtScanner: CrtScanner,
         private readonly threeOBScanner: ThreeOBScanner,
         private readonly cisdScanner: CisdScanner,
+        private readonly coreLayerDetection: CoreLayerDetectionService,
     ) { }
 
     /** Whether full-market scanning (hourly + POST /signals/scan) is allowed. */
@@ -204,6 +208,28 @@ export class ScannerService implements OnModuleInit, OnModuleDestroy {
 
             const elapsed = ((Date.now() - start) / 1000).toFixed(1);
             this.logger.log(`Scan completed in ${elapsed}s. Found ${signalCount} new signals.`);
+
+            // Core-Layer piggyback (ADR D11). Runs AFTER base scanners have persisted their
+            // per-TF rows because detection reads super_engulfing_signals. Failures here are
+            // swallowed on purpose — a Core-Layer regression must not leak into the base
+            // signal pipeline, which is the revenue-critical path.
+            if (isCoreLayerEnabled) {
+                await Sentry.withScope(async (scope) => {
+                    scope.setTag('module', 'core-layer');
+                    scope.setTag('core_layer.stage', 'detection');
+                    try {
+                        const clStart = Date.now();
+                        const result = await this.coreLayerDetection.runDetection(start);
+                        this.logger.log(
+                            `Core-Layer detection: created=${result.created} promoted=${result.promoted} demoted=${result.demoted} anchorChanged=${result.anchorChanged} closed=${result.closed} in ${Date.now() - clStart}ms`,
+                        );
+                    } catch (err) {
+                        const msg = err instanceof Error ? err.message : String(err);
+                        this.logger.error(`Core-Layer detection failed: ${msg}`);
+                        Sentry.captureException(err);
+                    }
+                });
+            }
         } catch (err) {
             this.logger.error(`Basic scan failed: ${err.message}`);
         } finally {

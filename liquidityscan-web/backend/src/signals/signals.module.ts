@@ -15,9 +15,10 @@ import { CandlesModule } from '../candles/candles.module';
 import { TelegramModule } from '../telegram/telegram.module';
 import { AdminModule } from '../admin/admin.module';
 import { AppConfigModule } from '../app-config/app-config.module';
+import { CoreLayerModule } from '../core-layer/core-layer.module';
 
 @Module({
-  imports: [PrismaModule, CandlesModule, TelegramModule, AdminModule, AppConfigModule],
+  imports: [PrismaModule, CandlesModule, TelegramModule, AdminModule, AppConfigModule, CoreLayerModule],
   controllers: [SignalsController],
   providers: [
     SignalsService,
