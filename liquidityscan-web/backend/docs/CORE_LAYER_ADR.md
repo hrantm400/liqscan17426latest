@@ -27,9 +27,11 @@ are deliberately out of scope here.
 - [D14 — Life state source of truth](#d14--life-state-source-of-truth)
 - [D15 — History storage](#d15--history-storage)
 - [D16 — Scheduler crash-containment](#d16--scheduler-crash-containment)
+- [D17 — Admin runtime controls](#d17--admin-runtime-controls)
 - [Naming matrix](#naming-matrix)
 - [Out of scope for v1](#out-of-scope-for-v1)
 - [Rename-audit status at Phase 0 sign-off](#rename-audit-status-at-phase-0-sign-off)
+- [Phase 6 — retrospective closeout](#phase-6--retrospective-closeout)
 
 ---
 
@@ -380,6 +382,67 @@ All four containment mechanisms are required — not optional, not
 
 ---
 
+## D17 — Admin runtime controls
+
+**Status: LOCKED (added with Phase 5b implementation, 2026-04-23)**
+
+Core-Layer exposes three admin-only control-plane endpoints under
+`/admin/core-layer/*`, plus a companion card on `/admin/settings`.
+They are the operational contract for running the feature in
+production without process restarts. The three endpoints are:
+
+- `GET  /admin/core-layer/stats` — side-effect-free snapshot of
+  runtime health: effective flag value, env-seed value,
+  `lastSuccessfulTickAt`, `lastTickDurationMs`, `lastTickNumber`,
+  `consecutiveFailures`, `recentErrors` (10-deep ring buffer),
+  plus `activeSignalCount.{total, byVariant, byAnchor,
+  byVariantAndAnchor}` from a single `count` + three parallel
+  `groupBy` calls. Safe to poll on a 10-second interval.
+- `POST /admin/core-layer/enabled { enabled: boolean }` — writes to
+  `AppConfig.coreLayerEnabled` (the runtime source of truth per
+  [D11](#d11--feature-flag-core_layer_enabled)), updates the
+  in-memory cache, returns `{ enabled, previousEnabled }`. A flip
+  `false → true` resets the [D16](#d16--scheduler-crash-containment)
+  consecutive-failure counter.
+- `POST /admin/core-layer/force-rescan` — **ACTIVE-only** wipe,
+  then synchronous `runDetection()`. CLOSED history is preserved
+  (the wipe is `deleteMany({ status: 'ACTIVE' })`; the
+  `CoreLayerHistoryEntry.signal` FK cascades only the history rows
+  belonging to the wiped ACTIVE signals). Returns the full counter
+  bundle — no polling. Rebuilt signals start with a fresh
+  `detectedAt` / `lastPromotedAt` and only a "created" history event,
+  documented in [D15](#d15--history-storage) as the accepted
+  side-effect of a recovery tool.
+
+All three endpoints live behind `AdminGuard` and `UserThrottlerGuard`
+with `strict` named quotas: `stats 60/60s`, `enabled 10/60s`,
+`force-rescan 3/60s`. Per-admin (user-tracked) not per-IP, so one
+admin on a shared NAT cannot lock out another.
+
+Runtime behavior:
+
+- **Flag read point is tick start only.** An in-flight tick always
+  finishes. Flipping the flag off mid-tick does NOT abort detection;
+  it causes the *next* tick to short-circuit. This matches the
+  [D16](#d16--scheduler-crash-containment) containment rule: a tick
+  is atomic from the scheduler's point of view.
+- **Telemetry is in-memory and non-persistent.** `recentErrors` is a
+  process-local ring buffer. Sentry remains the durable audit log
+  via existing capture calls. A process restart wipes the buffer
+  and the tick counter; `lastTickNumber = 0` after restart.
+- **Force-rescan only surfaces `runDetection()` exceptions.** The
+  simpler hook: the wrapper records a failure when detection throws
+  and a success when it returns. Warnings logged inside
+  `runDetection` do NOT count as failures; they were already
+  routed to Sentry under the existing scope.
+
+This decision is intentionally scoped narrower than a general
+"admin can poke any internal state" surface. The three endpoints
+cover the operational needs (visibility, kill-switch, recovery)
+without turning the admin panel into a maintenance console.
+
+---
+
 ## Naming matrix
 
 Every surface of Core-Layer MUST use the form in this table. This is the
@@ -460,6 +523,43 @@ Any future sighting of `Matryoshka` inside tracked code, UI copy, routes,
 env vars, DB table names, branch names, commit messages, log tags or
 Sentry tags is a bug. Fix it in the same PR that touches the file — do
 not open a dedicated rename PR.
+
+---
+
+## Phase 6 — retrospective closeout
+
+**Status: CLOSED (no dedicated PR, folded into Phase 4+5 deployment
+and Phase 5b controls, 2026-04-23).**
+
+The original Phase 6 ("staged rollout" — ops flips
+`CORE_LAYER_ENABLED=true` on the backend, waits for a scanner tick,
+verifies endpoints, then un-hides the sidebar) was executed
+implicitly during the Phase 4 + Phase 5 deployment on 2026-04-22.
+The ops flag was set to `true`, `pm2` restarted, and the live data
+path verified via `curl /api/core-layer/stats` and a full load of
+`/core-layer` in the frontend. No regressions surfaced in the
+revenue-critical scanner path. The three post-deploy hotfixes on
+the same day (404 from stale pm2 process, 429 from `burst` throttler
+false-positives, `0.00e+0` placeholders on the pair detail) were
+corrections to Phase 4/5, not new Phase 6 work.
+
+The sidebar-guard step from the original plan was intentionally
+skipped: `/core-layer/*` routes were already live and linked from
+the moment Phase 5 merged. No hidden-behind-flag guard was ever
+added on the frontend — the backend's `enabled: false` empty
+response was the single gating mechanism, and the disabled-state
+banner in `<CoreLayerState />` (shipped with Phase 1) covered the
+UX contract in both directions (flag-on → data; flag-off → banner,
+fall back to mock). Since the frontend behavior was already
+correct before Phase 6 would have run, the guard step was
+redundant and its absence has produced zero production incidents.
+
+With Phase 5b, control of the runtime flag has moved from a
+`.env` edit + process restart to the admin panel
+(see [D17](#d17--admin-runtime-controls)). This makes "staged
+rollout" a trivial admin action rather than an ops procedure, and
+retires the Phase 6 plan in its entirety. Any future staged
+enablement (e.g. for a follow-up variant or TF) reuses D17.
 
 ---
 
