@@ -103,7 +103,11 @@ export class CoreLayerDetectionService {
             const variantRows = rows.filter(
                 (r) => STRATEGY_TYPE_TO_VARIANT[r.strategyType] === variant,
             );
-            if (variantRows.length === 0) continue;
+
+            // Note: do NOT short-circuit when variantRows is empty. The orphan-close sweep
+            // below MUST still run so that ACTIVE Core-Layer chains whose upstream rows all
+            // cleared out since the last scan get closed — this is the common end-of-life
+            // path for a chain.
 
             const chains = this.collapseToChains(variantRows, variant);
             const seenKeys = new Set<string>();
