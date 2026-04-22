@@ -10,6 +10,7 @@ import { RsiDivergenceScanner } from './scanners/rsi-divergence.scanner';
 import { SuperEngulfingScanner } from './scanners/super-engulfing.scanner';
 import { LifecycleService } from './lifecycle.service';
 import { SignalStateService } from './signal-state.service';
+import { SubHourScannerDispatcher } from './sub-hour-scanner.dispatcher';
 import { PrismaModule } from '../prisma/prisma.module';
 import { CandlesModule } from '../candles/candles.module';
 import { TelegramModule } from '../telegram/telegram.module';
@@ -31,6 +32,7 @@ import { CoreLayerModule } from '../core-layer/core-layer.module';
     ScannerService,
     LifecycleService,
     SignalStateService,
+    SubHourScannerDispatcher,
   ],
   exports: [SignalsService],
 })

@@ -434,6 +434,12 @@ model AppConfig {
   // the source of truth and admin writes go through
   // POST /api/admin/core-layer/enabled.
   coreLayerEnabled      Boolean?
+  // Phase 7.3 — sub-hour scanning (15m/5m event-driven) runtime flag.
+  // Independent of `coreLayerEnabled` so the hourly 1H/4H/1D/W path and
+  // the sub-hour path can roll out on different cadences. NULL → seed
+  // from CORE_LAYER_SUBHOUR_ENABLED env on first boot, thereafter
+  // AppConfig wins. Admin writes via POST /api/admin/core-layer/sub-hour-enabled.
+  coreLayerSubHourEnabled Boolean?
   updatedAt             DateTime @updatedAt
 
   @@map("app_config")

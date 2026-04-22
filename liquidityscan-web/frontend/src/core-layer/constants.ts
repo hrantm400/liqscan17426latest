@@ -13,15 +13,32 @@ import type { AnchorType, CoreLayerVariant, IntroVideoPageKey, TF } from './type
 export const TF_ORDER: readonly TF[] = ['W', '1D', '4H', '1H', '15m', '5m'];
 
 /**
- * TFs rendered in v1. 15m and 5m exist in the type system but are hidden from
- * `DepthGrid` and the pair-detail chart grid until Phase 7 flips the feature
- * flag. Components already support them; iterating this array is the only
- * change required.
+ * Phase 7.3 — sub-hour unlock. 15m and 5m are now first-class visible TFs
+ * alongside the higher-TF core. The Pro gate has moved from "hide the TF"
+ * to "lock the data" (see PRO_TFS below + the tier context). Anonymous /
+ * SCOUT callers will see the row slots but the backend strips any chain
+ * that contains 15m/5m, so the UI never renders phantom SCOUT data.
  */
-export const VISIBLE_TFS: readonly TF[] = ['W', '1D', '4H', '1H'];
+export const VISIBLE_TFS: readonly TF[] = ['W', '1D', '4H', '1H', '15m', '5m'];
 
-/** Sub-hour TFs. Pro-tier only in production (visible in Phase 7). */
+/**
+ * Sub-hour TFs. In Phase 7.3 these are VISIBLE to everyone but DATA is
+ * Pro-only: chains containing any PRO_TF (and any 5-deep chain) are
+ * filtered server-side for SCOUT tier. The frontend renders a lock UI
+ * (padlock + upgrade CTA) on the corresponding slots so the value is
+ * obvious even before the user upgrades. Keep this list in sync with
+ * backend/src/core-layer/core-layer.constants.ts.
+ */
 export const PRO_TFS: readonly TF[] = ['15m', '5m'];
+
+/**
+ * Phase 7.3 — the deepest depth SCOUT sees. 5-deep chains land inside
+ * the Pro tier because they always include a sub-hour TF. Mirrored in
+ * the backend constant SCOUT_MAX_DEPTH so there is one number to edit
+ * per-tier in the future. Changing it here alone would desync the
+ * backend filter from the frontend lock UI.
+ */
+export const SCOUT_MAX_DEPTH = 4;
 
 /**
  * Candle duration in milliseconds for life-state math. A week = 7 days of 24h
@@ -85,11 +102,24 @@ export const ANCHOR_FROM_URL: Record<string, AnchorType> = {
   fourhour: 'FOURHOUR',
 };
 
-/** Depth columns rendered by `DepthGrid` in v1. The 5-deep column ships in Phase 7. */
-export const DEPTH_COLUMNS: ReadonlyArray<{ depth: number; label: string; blurb: string }> = [
-  { depth: 2, label: '2-deep', blurb: 'Two-TF alignment' },
-  { depth: 3, label: '3-deep', blurb: 'Three-TF alignment' },
-  { depth: 4, label: '4-deep', blurb: 'Four-TF alignment' },
+/**
+ * Depth columns rendered by `DepthGrid`. The 5-deep column is Pro-gated
+ * (Phase 7.3) — the constant includes it so DepthGrid can always render
+ * the full lattice; per-column tier gating happens at the cell level
+ * via `isProOnly`. SCOUT users see the column header + a padlock on
+ * each cell instead of counts.
+ */
+export const DEPTH_COLUMNS: ReadonlyArray<{
+  depth: number;
+  label: string;
+  blurb: string;
+  /** True when SCOUT tier cannot see this column's counts/signals. */
+  isProOnly: boolean;
+}> = [
+  { depth: 2, label: '2-deep', blurb: 'Two-TF alignment', isProOnly: false },
+  { depth: 3, label: '3-deep', blurb: 'Three-TF alignment', isProOnly: false },
+  { depth: 4, label: '4-deep', blurb: 'Four-TF alignment', isProOnly: false },
+  { depth: 5, label: '5-deep', blurb: 'Five-TF alignment', isProOnly: true },
 ];
 
 /** Variant metadata — matches Appendix A of the implementation plan. */

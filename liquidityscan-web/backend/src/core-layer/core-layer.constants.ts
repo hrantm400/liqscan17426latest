@@ -50,6 +50,28 @@ export const CORRELATION_PAIRS: ReadonlyArray<readonly [Tf, Tf]> = [
 /** TFs visible in v1 UI. Detection is still gated per-TF by upstream scanner coverage. */
 export const VISIBLE_TFS: readonly Tf[] = ['W', '1D', '4H', '1H'];
 
+/**
+ * Phase 7.3 — sub-hour TFs. Pro-only (FULL_ACCESS).
+ *
+ * SCOUT tier sees signals filtered to remove chains containing any of
+ * these TFs, and the 5-deep depth column is locked. Enforcement is
+ * authoritative on the backend (CoreLayerQueryService) with the frontend
+ * also rendering a lock state for good UX. Keep this list in sync with
+ * `frontend/src/core-layer/constants.ts :: PRO_TFS`.
+ */
+export const PRO_TFS: readonly Tf[] = ['15m', '5m'];
+
+/**
+ * Phase 7.3 — SCOUT tier depth cap. Chains with `depth >= 5` are the
+ * Pro payoff for sub-hour unlock — a 5-deep chain by definition
+ * includes a 15m or 5m TF. Stripping depth≥5 for SCOUT gives the
+ * padlock UI something concrete to tease ("1 more chain unlocks at
+ * Pro"). If this ever needs to vary (e.g. showing teaser counts),
+ * wire that through a config flag — do not hard-code tier logic
+ * inside the filter.
+ */
+export const SCOUT_MAX_DEPTH = 4;
+
 /** Normalize the legacy/binance TF string (e.g. "1w", "1h") that the SuperEngulfingSignal table uses
  *  to the canonical Core-Layer TF ("W", "1H"). Unknown inputs return null so callers can skip them. */
 export function normalizeTimeframe(tf: string): Tf | null {

@@ -1,6 +1,6 @@
 # Core-Layer — Architecture Decision Record
 
-This document locks the 16 architecture decisions that govern the Core-Layer
+This document locks the 18 architecture decisions that govern the Core-Layer
 feature end-to-end. It is the reference every subsequent PR cites. Any
 deviation must first be proposed as an amendment to this file on a separate
 branch; code MUST NOT drift from the locked decisions.
@@ -28,11 +28,13 @@ are deliberately out of scope here.
 - [D15 — History storage](#d15--history-storage)
 - [D16 — Scheduler crash-containment](#d16--scheduler-crash-containment)
 - [D17 — Admin runtime controls](#d17--admin-runtime-controls)
+- [D18 — Sub-hour scanning (Phase 7.3)](#d18--sub-hour-scanning-phase-73)
 - [Naming matrix](#naming-matrix)
 - [Out of scope for v1](#out-of-scope-for-v1)
 - [Rename-audit status at Phase 0 sign-off](#rename-audit-status-at-phase-0-sign-off)
 - [Phase 6 — retrospective closeout](#phase-6--retrospective-closeout)
 - [Phase 7.1 / 7.2 — retrospective closeout](#phase-71--72--retrospective-closeout)
+- [Phase 7.3 — sub-hour scanning shipped](#phase-73--sub-hour-scanning-shipped)
 
 ---
 
@@ -444,6 +446,122 @@ without turning the admin panel into a maintenance console.
 
 ---
 
+## D18 — Sub-hour scanning (Phase 7.3)
+
+**Status: LOCKED (added with Phase 7.3 implementation, 2026-04-24)**
+
+Phase 7.3 unlocks the `15m` and `5m` timeframes for Core-Layer
+detection. The architecture is intentionally asymmetric with the
+hourly path so that sub-hour work cannot destabilize the already-live
+1H/4H/1D/W scanner.
+
+Cadence — **hybrid**:
+
+- `1H`, `4H`, `1D`, `W` remain on the hourly cron established in
+  [D6](#d6--core-layer-engine-cadence). No changes.
+- `15m` and `5m` are **event-driven** on Binance WebSocket
+  `kline_<interval>` close events. Kline streams for both intervals
+  are already subscribed by `BinanceWsManager`; Phase 7.3 adds a
+  per-pair dirty bitmap and a `SubHourScannerDispatcher` that
+  drains it.
+- The dispatcher batches work with a **30-second debounce window**
+  (`d`). A single Core-Layer detection pass is triggered for all
+  dirty pairs after the window elapses with no new kline closes.
+  This prevents per-close thrash during high-frequency periods
+  (e.g. scheduled candle closes at :00, :15, :30, :45) while
+  keeping p95 detection latency bounded below one minute.
+- Detection itself runs in the same
+  `CoreLayerDetectionService.runDetection` method as the hourly
+  path — no forked scanner. The only new argument is a
+  `dirtyPairs: Set<string> | null` filter; when present, the
+  engine scopes its read to those pairs and runs the exact same
+  collapse + upsert pipeline.
+
+Data model — **no schema forks**:
+
+- Sub-hour signals live in the same `core_layer_signals` /
+  `core_layer_signal_history` tables. `chain` is just a
+  superset of TFs now. No sub-hour-specific columns, no
+  sub-hour-specific indexes, no parallel write path.
+- Correlation pair map is widened to include `['4H', '15m']` and
+  `['1H', '5m']` on top of the existing `['1D', '1H']`. The
+  `CORRELATION_PAIRS` constant is the single source of truth; UI
+  (`CorrelationBadge`) already supports any tuple without code
+  changes.
+
+Runtime flag — **independent of the master flag**:
+
+- A new persisted flag `AppConfig.coreLayerSubHourEnabled` (boolean,
+  nullable) gates the sub-hour dispatcher only. It is orthogonal
+  to `AppConfig.coreLayerEnabled` (D11): turning sub-hour off
+  does **not** disable hourly detection, and turning the master
+  flag off halts both (the master is the outer gate).
+- Env seed on first boot: `CORE_LAYER_SUBHOUR_ENABLED`. Same
+  seed-if-null semantics as D11.
+- Admin control is exposed via
+  `POST /admin/core-layer/sub-hour-enabled { subHourEnabled: boolean }`
+  — a distinct endpoint from D17's master toggle, with its own
+  response DTO so a UI toast cannot confuse which flag was flipped.
+  Sub-hour telemetry is a sibling `subHourRuntime` struct on the
+  admin stats response. The two tick streams (hourly / sub-hour)
+  track their own `lastSuccessfulTickAt`, `lastTickDurationMs`,
+  `consecutiveFailures` and `recentErrors` buffers so that a
+  broken dispatcher cannot muddy the hourly health signal.
+
+Tier gating — **dual-layer, authoritative backend**:
+
+- Two categories of sub-hour surface are Pro-only per
+  [D12](#d12--pro-gating-is-hybrid):
+  (a) any chain containing `15m` or `5m`;
+  (b) any 5-deep chain (the 5-deep column unlocked by 7.3 always
+  includes at least one sub-hour leaf).
+- The **authoritative** filter lives in the backend. Public
+  endpoints `GET /core-layer/{signals,signals/:id,stats}` optionally
+  decode the `Authorization` header, resolve the caller's
+  `CoreLayerEffectiveTier`, and strip Pro-gated rows for `SCOUT`
+  before responding. Anonymous and expired callers are treated as
+  `SCOUT`. A SCOUT cannot learn the existence of a sub-hour or
+  5-deep signal from any public response.
+- The **frontend** layers a lock UI on top of the authoritative
+  filter: a padlocked 5-deep column card in `DepthGrid` and the
+  existing `UpgradeModal` blocking gate on sub-hour pair detail.
+  The lock UI is presentational; flipping it off in devtools
+  cannot reveal Pro data because the backend has already stripped
+  it from the payload.
+- Tier resolution is centralized in `CoreLayerTierResolverService`
+  (backend) and the `TierContext` / `useCoreLayerTier` hook
+  (frontend). Expired subscriptions resolve to `SCOUT`. The
+  frontend context also supports an admin/debug `viewAsTier`
+  localStorage override that can only *downgrade* the displayed
+  tier, never upgrade it.
+
+Rationale — **why event-driven, not a second cron.** Sub-hour
+candles close four or twelve times per hour respectively; a cron
+would either fire too often (4/h for `15m` = every 15 min wakeup
+for possibly-no-work) or mis-align with actual close timing. The
+WebSocket manager is already open for the ticker cache and the
+`isClosed` flag on kline events gives us exact close timing for
+free. The 30-second debounce absorbs the synchronous :00 /:15 /:30
+/:45 close bursts (many pairs closing on the same second) into one
+detection pass.
+
+Rationale — **why independent flag.** The master flag (D11) is a
+kill switch for the entire feature. Sub-hour is a revenue-bearing
+Pro surface and will get the most operational attention in the
+first weeks — separate flag lets us park it without taking down
+the hourly surface that anonymous and SCOUT users rely on, and
+lets us run the opposite configuration during incident triage.
+
+Rationale — **why dual-layer gating, not UI-only.** A SCOUT client
+cannot be trusted to hide its own Pro data. Backend filter is
+non-negotiable. The UI lock is additive: it communicates the
+upgrade path ("5-deep is Pro") without relying on empty columns.
+Cutting either layer would either leak Pro data to SCOUT (if
+backend removed) or present SCOUT users with mysteriously empty
+sections (if UI removed).
+
+---
+
 ## Naming matrix
 
 Every surface of Core-Layer MUST use the form in this table. This is the
@@ -479,14 +597,17 @@ landing.
 - **Bias Core-Layer variant.** Phase 7.2. **CLOSED (shipped implicitly
   with Phase 4 engine generalization, verified live 2026-04-23).**
   See [Phase 7.1 / 7.2 — retrospective closeout](#phase-71--72--retrospective-closeout).
-- **Sub-hour scanning (15m, 5m).** Phase 7.3. Biggest Phase 7 item.
-  Recommended direction: event-driven on Binance WebSocket kline-close
-  events (already consumed for candle data), not new crons. Unlocks the
-  real visible difference between Base and Pro tiers.
-- **`4H+15m` and `1H+5m` correlation badges.** Gated on Phase 7.3 sub-hour
-  scanning.
-- **5-deep column in the depth grid.** Gated on Phase 7.3 sub-hour
-  scanning. v1 grid is 2-deep / 3-deep / 4-deep only.
+- **Sub-hour scanning (15m, 5m).** Phase 7.3. **CLOSED (shipped
+  2026-04-24, event-driven on Binance WS kline-close with 30s
+  debounce, independent runtime flag).** See
+  [D18 — Sub-hour scanning (Phase 7.3)](#d18--sub-hour-scanning-phase-73)
+  and [Phase 7.3 — sub-hour scanning shipped](#phase-73--sub-hour-scanning-shipped).
+- **`4H+15m` and `1H+5m` correlation badges.** **CLOSED (shipped
+  with Phase 7.3, 2026-04-24).** `CORRELATION_PAIRS` extended; Pro
+  data filtered at the backend for SCOUT.
+- **5-deep column in the depth grid.** **CLOSED (shipped with
+  Phase 7.3, 2026-04-24).** Pro-only; SCOUT sees a padlocked
+  column with upgrade CTA.
 - **Custom Core-Layer builder.** Phase 7.4. User-defined alignment
   recipes, Pro-only feature. Separate PR after Phase 7.1–7.3 stabilize.
 - **Confluence feature.** Phase 7.5. Same architecture as Core-Layer but
@@ -641,6 +762,49 @@ Phase 7.3 (sub-hour scanning), Phase 7.4 (custom Core-Layer builder),
 Phase 7.5 (confluence feature). The two sub-hour-gated items
 (`4H+15m` / `1H+5m` correlation badges and the 5-deep grid column)
 remain gated on Phase 7.3 unchanged.
+
+---
+
+## Phase 7.3 — sub-hour scanning shipped
+
+**Status: CLOSED (shipped 2026-04-24).**
+
+Phase 7.3 landed as a single PR that:
+
+- Extended `BinanceWsManager` to subscribe to `kline_15m` and
+  `kline_5m` for the full pair universe and emit close events into
+  a per-pair dirty bitmap.
+- Added `SubHourScannerDispatcher` with a 30-second debounce window
+  draining the bitmap into `CoreLayerDetectionService.runDetection`
+  scoped to `dirtyPairs`.
+- Added the `AppConfig.coreLayerSubHourEnabled` column (nullable
+  boolean) via an additive migration, env-seeded from
+  `CORE_LAYER_SUBHOUR_ENABLED` on first boot.
+- Added the public tier-aware filter on
+  `GET /core-layer/{signals,signals/:id,stats}` via
+  `CoreLayerTierResolverService`. Anonymous and expired callers
+  resolve to `SCOUT` and cannot see Pro-gated rows.
+- Added `POST /admin/core-layer/sub-hour-enabled` and a
+  `subHourRuntime` sibling struct on `GET /admin/core-layer/stats`.
+  The admin card on `/admin/settings` gained a sub-hour toggle and
+  a second telemetry block.
+- Extended `VISIBLE_TFS` to include `15m` and `5m` on the frontend,
+  added a Pro-only 5-deep column to `DEPTH_COLUMNS` with a
+  padlocked locked-state card in `DepthGrid`, and wired
+  `TierContext` / `useCoreLayerTier` to the real
+  `useTierGating` hook with an admin `viewAsTier` downgrade-only
+  override.
+- Extended `CORRELATION_PAIRS` to `['4H', '15m']` and `['1H', '5m']`.
+  No UI changes were needed — `CorrelationBadge` already accepts
+  any tuple.
+
+The dual-layer tier gate — backend authoritative filter plus
+frontend lock UI — is the decisive architectural choice; see
+[D18](#d18--sub-hour-scanning-phase-73) for rationale.
+
+**Remaining out-of-scope items after this closeout:**
+Phase 7.4 (custom Core-Layer builder) and Phase 7.5 (confluence
+feature). No sub-hour-gated items remain.
 
 ---
 

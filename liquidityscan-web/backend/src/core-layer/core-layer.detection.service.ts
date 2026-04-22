@@ -58,10 +58,25 @@ export class CoreLayerDetectionService {
     ) {}
 
     /**
-     * Run one full detection pass. Safe to call even when there are zero
-     * upstream signals — it just writes nothing and returns zeroed counters.
+     * Run a detection pass.
+     *
+     * Two modes controlled by `opts.pairs`:
+     *   - unset (default): full-universe pass. Reads every live row for
+     *     every variant, rebuilds chains, orphan-sweeps every ACTIVE
+     *     Core-Layer row, and runs a global `advanceLifecycles` sweep.
+     *   - set: per-pair pass (Phase 7.3 sub-hour dispatcher). Reads only
+     *     upstream rows and only orphan-checks Core-Layer rows for the
+     *     given pairs. The global `advanceLifecycles` sweep is SKIPPED —
+     *     that sweep is the hourly cron's responsibility and must remain
+     *     universal so a chain on a pair that did not trade this window
+     *     still ages out on schedule.
+     *
+     * Safe to call even when there are zero upstream signals — writes
+     * nothing and returns zeroed counters.
      */
-    async runDetection(now: number = Date.now()): Promise<{
+    async runDetection(
+        optsOrLegacyNow: number | { now?: number; pairs?: string[] } = Date.now(),
+    ): Promise<{
         created: number;
         promoted: number;
         demoted: number;
@@ -69,6 +84,17 @@ export class CoreLayerDetectionService {
         closed: number;
         scannedVariants: number;
     }> {
+        // Backwards-compat: callers that still pass a bare `now` number
+        // (ScannerService.scanBasicStrategies and the force-rescan admin
+        // path) keep working unmodified.
+        const opts =
+            typeof optsOrLegacyNow === 'number'
+                ? { now: optsOrLegacyNow }
+                : { ...optsOrLegacyNow };
+        const now = opts.now ?? Date.now();
+        const scopedPairs = opts.pairs;
+        const isScoped = Array.isArray(scopedPairs) && scopedPairs.length > 0;
+
         const start = Date.now();
         const counters = {
             created: 0,
@@ -79,12 +105,20 @@ export class CoreLayerDetectionService {
             scannedVariants: 0,
         };
 
+        // Per-pair mode short-circuits when the caller passed an empty
+        // pairs array — there is nothing to do, and we must not fall
+        // through to a full-universe scan.
+        if (Array.isArray(scopedPairs) && scopedPairs.length === 0) {
+            return counters;
+        }
+
         // Pull every live row for all three variants in one query, then partition in-process.
         const strategyTypes = Object.values(VARIANT_STRATEGY_TYPE);
         const rows = (await this.prisma.superEngulfingSignal.findMany({
             where: {
                 strategyType: { in: strategyTypes },
                 lifecycleStatus: { in: LIVE_SIGNAL_STATUSES as unknown as any[] },
+                ...(isScoped ? { symbol: { in: scopedPairs } } : {}),
             },
             select: {
                 id: true,
@@ -131,8 +165,15 @@ export class CoreLayerDetectionService {
             }
 
             // Close ACTIVE chains for this variant that no longer have any upstream signal.
+            // Scoped mode only examines rows for the given pairs — a pair the dispatcher did
+            // not mark dirty must not be closed just because its upstream rows happen to be
+            // absent from this sub-query (they aren't — we didn't query them).
             const orphaned = await this.prisma.coreLayerSignal.findMany({
-                where: { variant, status: 'ACTIVE' },
+                where: {
+                    variant,
+                    status: 'ACTIVE',
+                    ...(isScoped ? { pair: { in: scopedPairs } } : {}),
+                },
                 select: { id: true, pair: true, direction: true, chain: true },
             });
             for (const row of orphaned) {
@@ -162,14 +203,18 @@ export class CoreLayerDetectionService {
         // Second pass: advance lifecycles for rows whose TFs aged out since the last scan
         // even though the upstream row was still marked live. Mostly relevant during dev
         // when scans skip candle windows, but cheap in prod — indexed status scan.
-        const swept = await this.lifecycle.advanceLifecycles(now);
-        counters.demoted += swept.demoted;
-        counters.anchorChanged += swept.anchorChanged;
-        counters.closed += swept.closed;
+        // Skipped in scoped mode; the hourly cron keeps ownership of the universe sweep
+        // so a pair that does not fire a sub-hour close still ages out on its own schedule.
+        if (!isScoped) {
+            const swept = await this.lifecycle.advanceLifecycles(now);
+            counters.demoted += swept.demoted;
+            counters.anchorChanged += swept.anchorChanged;
+            counters.closed += swept.closed;
+        }
 
         const elapsed = Date.now() - start;
         this.logger.log(
-            `runDetection: created=${counters.created} promoted=${counters.promoted} demoted=${counters.demoted} anchorChanged=${counters.anchorChanged} closed=${counters.closed} in ${elapsed}ms`,
+            `runDetection${isScoped ? `[pairs=${scopedPairs!.length}]` : ''}: created=${counters.created} promoted=${counters.promoted} demoted=${counters.demoted} anchorChanged=${counters.anchorChanged} closed=${counters.closed} in ${elapsed}ms`,
         );
         return counters;
     }

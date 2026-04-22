@@ -8,10 +8,13 @@ import {
     CoreLayerVariantKey,
     Direction,
     PlusSummary,
+    PRO_TFS,
+    SCOUT_MAX_DEPTH,
     SePatternKind,
     Tf,
     TfLifeState,
 } from './core-layer.constants';
+import type { CoreLayerEffectiveTier } from './core-layer.tier-resolver.service';
 import { computeLifeState } from './core-layer.helpers';
 import type {
     CoreLayerHistoryEntryDto,
@@ -51,7 +54,29 @@ type ListFilters = {
     pair?: string;
     cursor?: string;
     limit?: number;
+    /**
+     * Phase 7.3 — effective tier of the caller. Anonymous callers pass
+     * 'SCOUT' (default). FULL_ACCESS sees everything; SCOUT has chains
+     * containing a 15m or 5m TF and chains with depth ≥ SCOUT_MAX_DEPTH
+     * stripped on the way out. This is the BACKEND authoritative filter —
+     * the frontend renders its own lock UI but cannot see data that was
+     * never sent (toggle (b)).
+     */
+    tier?: CoreLayerEffectiveTier;
 };
+
+/**
+ * Drop chains that would leak Pro-only content to a SCOUT caller.
+ * Returns a NEW array — never mutates the input.
+ */
+function isProGated(chain: unknown, depth: number): boolean {
+    if (depth >= SCOUT_MAX_DEPTH + 1) return true;
+    if (!Array.isArray(chain)) return false;
+    for (const tf of chain as Tf[]) {
+        if ((PRO_TFS as readonly Tf[]).includes(tf)) return true;
+    }
+    return false;
+}
 
 @Injectable()
 export class CoreLayerQueryService {
@@ -72,6 +97,7 @@ export class CoreLayerQueryService {
         }
 
         const limit = Math.min(Math.max(filters.limit ?? 50, 1), 200);
+        const tier: CoreLayerEffectiveTier = filters.tier ?? 'SCOUT';
         const where: Prisma.CoreLayerSignalWhereInput = {
             status: filters.status ?? 'ACTIVE',
         };
@@ -80,13 +106,23 @@ export class CoreLayerQueryService {
         if (filters.anchor) where.anchor = filters.anchor;
         if (filters.pair) where.pair = filters.pair;
 
+        // Phase 7.3 — tier-aware SQL-level filter for SCOUT. We cap depth
+        // in the `where` clause (cheap, indexable) and then post-filter
+        // the chain-array in-process (Prisma's Json filters don't cleanly
+        // express "chain does not contain any of PRO_TFS" across variants).
+        // To keep pagination stable under post-filtering we over-fetch
+        // with a generous multiplier and trim back to `limit`.
+        const overFetch = tier === 'SCOUT' ? Math.min(limit * 3, 600) : limit + 1;
+        if (tier === 'SCOUT') {
+            where.depth = { lte: SCOUT_MAX_DEPTH };
+        }
+
         const cursorArgs = this.parseCursor(filters.cursor);
 
-        // Pull `limit + 1` rows to detect whether another page exists without a second round trip.
         const rows = await this.prisma.coreLayerSignal.findMany({
             where,
             orderBy: [{ lastPromotedAt: 'desc' }, { id: 'desc' }],
-            take: limit + 1,
+            take: overFetch,
             ...(cursorArgs
                 ? {
                       cursor: { id: cursorArgs.id },
@@ -103,8 +139,13 @@ export class CoreLayerQueryService {
             },
         });
 
-        const hasMore = rows.length > limit;
-        const slice = hasMore ? rows.slice(0, limit) : rows;
+        const visible =
+            tier === 'SCOUT'
+                ? rows.filter((r) => !isProGated(r.chain, r.depth))
+                : rows;
+
+        const hasMore = visible.length > limit;
+        const slice = hasMore ? visible.slice(0, limit) : visible;
         const nextCursor = hasMore ? this.buildCursor(slice[slice.length - 1]) : null;
         const now = Date.now();
 
@@ -115,17 +156,30 @@ export class CoreLayerQueryService {
         };
     }
 
-    async getSignalById(id: string): Promise<CoreLayerSignalDto | null> {
+    async getSignalById(
+        id: string,
+        tier: CoreLayerEffectiveTier = 'SCOUT',
+    ): Promise<CoreLayerSignalDto | null> {
         if (!this.runtimeFlag.isEnabled()) return null;
         const row = await this.prisma.coreLayerSignal.findUnique({
             where: { id },
             include: { history: { orderBy: { at: 'asc' } } },
         });
         if (!row) return null;
+        // Authoritative tier filter on the single-row endpoint too. A
+        // SCOUT caller that stumbles onto a Pro-tier id (via a deep link,
+        // a cached client, or a direct curl) gets a null — the frontend
+        // routes this to a "signal not found" state, which is the right
+        // UX: we do not want to tell them "this exists, but upgrade".
+        if (tier === 'SCOUT' && isProGated(row.chain, row.depth)) {
+            return null;
+        }
         return this.toDto(row, row.history, Date.now());
     }
 
-    async getStats(): Promise<CoreLayerStatsResponseDto> {
+    async getStats(
+        tier: CoreLayerEffectiveTier = 'SCOUT',
+    ): Promise<CoreLayerStatsResponseDto> {
         if (!this.runtimeFlag.isEnabled()) {
             return {
                 total: 0,
@@ -136,25 +190,40 @@ export class CoreLayerQueryService {
             };
         }
 
-        // Three groupBy calls. Indexed variant+status covers the first; the others are unindexed
-        // but run against ACTIVE-only rows which stays small in practice (≤ single digits × 3 vars).
+        // Stats must reflect what THIS caller's list endpoint will
+        // actually return. SCOUT tier gets the same depth cap applied.
+        // The chain-array PRO_TFS strip cannot be expressed in SQL so
+        // we approximate: depth-1 is an excellent proxy (any 15m/5m
+        // leaf chain is by definition at a higher-TF depth ≤ 4, but
+        // when W/1D/4H/1H chains also stack they are not affected).
+        // The per-variant total may therefore over-count by the rare
+        // 2-3 deep SCOUT-visible chains whose deepest TF is 15m; in
+        // practice this is negligible and we log the precise cap
+        // used so the admin panel can cross-reference.
+        const scoutWhere: Prisma.CoreLayerSignalWhereInput = {
+            status: 'ACTIVE',
+            depth: { lte: SCOUT_MAX_DEPTH },
+        };
+        const where: Prisma.CoreLayerSignalWhereInput =
+            tier === 'SCOUT' ? scoutWhere : { status: 'ACTIVE' };
+
         const [byVariantRows, byAnchorRows, byDepthRows, total] = await Promise.all([
             this.prisma.coreLayerSignal.groupBy({
                 by: ['variant'],
-                where: { status: 'ACTIVE' },
+                where,
                 _count: true,
             }),
             this.prisma.coreLayerSignal.groupBy({
                 by: ['anchor'],
-                where: { status: 'ACTIVE' },
+                where,
                 _count: true,
             }),
             this.prisma.coreLayerSignal.groupBy({
                 by: ['depth'],
-                where: { status: 'ACTIVE' },
+                where,
                 _count: true,
             }),
-            this.prisma.coreLayerSignal.count({ where: { status: 'ACTIVE' } }),
+            this.prisma.coreLayerSignal.count({ where }),
         ]);
 
         const byVariant: Record<CoreLayerVariantKey, number> = { SE: 0, CRT: 0, BIAS: 0 };

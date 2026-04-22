@@ -90,8 +90,26 @@ export interface AdminCoreLayerRuntimeStatus {
   }>;
 }
 
+// Phase 7.3 — sub-hour sibling telemetry. Mirrors
+// `CoreLayerSubHourRuntimeStatus` on the backend.
+export interface AdminCoreLayerSubHourRuntimeStatus {
+  enabled: boolean;
+  envSeed: boolean;
+  lastSuccessfulTickAt: number | null;
+  lastTickDurationMs: number | null;
+  lastTickNumber: number;
+  consecutiveFailures: number;
+  recentErrors: Array<{
+    at: number;
+    message: string;
+    tickNumber: number;
+  }>;
+  lastDirtyPairCount: number | null;
+}
+
 export interface AdminCoreLayerStatsResponse {
   runtime: AdminCoreLayerRuntimeStatus;
+  subHourRuntime: AdminCoreLayerSubHourRuntimeStatus;
   activeSignalCount: {
     total: number;
     byVariant: Record<'SE' | 'CRT' | 'BIAS', number>;
@@ -107,6 +125,11 @@ export interface AdminCoreLayerStatsResponse {
 export interface AdminCoreLayerSetEnabledResponse {
   enabled: boolean;
   previousEnabled: boolean;
+}
+
+export interface AdminCoreLayerSetSubHourEnabledResponse {
+  subHourEnabled: boolean;
+  previousSubHourEnabled: boolean;
 }
 
 export interface AdminCoreLayerForceRescanResponse {
@@ -538,6 +561,19 @@ class ApiClient {
     return this.request<AdminCoreLayerForceRescanResponse>(
       '/admin/core-layer/force-rescan',
       { method: 'POST' },
+    );
+  }
+
+  // Phase 7.3 — sub-hour toggle. Distinct from the master flag so flipping
+  // sub-hour off only stops 15m/5m event-driven detection; hourly
+  // 1H/4H/1D/W keeps running.
+  async setAdminCoreLayerSubHourEnabled(subHourEnabled: boolean) {
+    return this.request<AdminCoreLayerSetSubHourEnabledResponse>(
+      '/admin/core-layer/sub-hour-enabled',
+      {
+        method: 'POST',
+        body: JSON.stringify({ subHourEnabled }),
+      },
     );
   }
 

@@ -7,11 +7,17 @@ import type { CandleData } from '../signals/indicators';
 export class CandleFetchJob {
   private readonly logger = new Logger(CandleFetchJob.name);
 
+  // Phase 7.3 — 15m/5m added for WS bootstrap parity. Limits tuned so
+  // each TF has roughly the same calendar coverage as the hourly TF
+  // (i.e. ~12 days of history). This keeps REST-fallback cold starts
+  // fast without blowing out the per-symbol per-TF candle payload size.
   private static readonly INTERVALS: { interval: string; limit: number }[] = [
     { interval: '1h', limit: 300 },
     { interval: '4h', limit: 300 },
     { interval: '1d', limit: 300 },
     { interval: '1w', limit: 200 },
+    { interval: '15m', limit: 500 },
+    { interval: '5m', limit: 500 },
   ];
 
   constructor(

@@ -318,4 +318,63 @@ export class ScannerService implements OnModuleInit, OnModuleDestroy {
         }
         return count;
     }
+
+    /**
+     * Phase 7.3 — scan a single symbol on sub-hour TFs only (15m and 5m).
+     *
+     * Called by SubHourScannerDispatcher once per dirty pair per debounce
+     * window. Mirrors `scanSymbol`'s scanner fan-out but restricted to:
+     *   - SE (SuperEngulfing) — 15m, 5m
+     *   - BIAS (ICT bias)      — 15m, 5m
+     *   - CRT                   — 15m, 5m
+     *
+     * RSI-divergence / 3OB / CISD are NOT scanned sub-hour in v1. They
+     * are product-weighted on higher TFs; adding them to the sub-hour
+     * path would compound WS-event throughput without a clear product
+     * payoff. Core-Layer is the only consumer of the 15m/5m variant
+     * rows these three scanners produce, and Core-Layer only cares
+     * about SE / CRT / BIAS.
+     *
+     * Reads candles from WS memory if available, falls back to DB
+     * snapshots — same source strategy as `scanSymbol`. Failures are
+     * logged but not thrown; the caller aggregates per-pair failures
+     * into the dispatcher's `recordSubHourTickFailure` telemetry.
+     */
+    async scanSymbolSubHour(symbol: string): Promise<number> {
+        let count = 0;
+        try {
+            const w = ScannerService.SCANNER_CANDLE_WINDOW;
+
+            let c15: import('../signals/indicators').CandleData[];
+            let c5: import('../signals/indicators').CandleData[];
+
+            if (this.wsManager.isReady()) {
+                c15 = this.wsManager.getCandles(symbol, '15m');
+                c5 = this.wsManager.getCandles(symbol, '5m');
+            } else {
+                [c15, c5] = await Promise.all([
+                    this.candleSnapshotService.getSnapshot(symbol, '15m'),
+                    this.candleSnapshotService.getSnapshot(symbol, '5m'),
+                ]);
+            }
+
+            if (c15.length === 0 && c5.length === 0) return 0;
+
+            const promises: Promise<number>[] = [];
+            for (const tf of ['15m', '5m'] as const) {
+                const c = tf === '15m' ? c15 : c5;
+                if (c.length === 0) continue;
+                promises.push(this.superEngulfingScanner.scanFromCandles(symbol, tf, c.slice(-w)));
+                promises.push(this.ictBiasScanner.scanFromCandles(symbol, tf, c.slice(-w)));
+                promises.push(this.crtScanner.scanFromCandles(symbol, tf, c.slice(-w)));
+            }
+
+            const results = await Promise.all(promises);
+            count = results.reduce((a, b) => a + b, 0);
+        } catch (e) {
+            const msg = e instanceof Error ? e.message : String(e);
+            this.logger.warn(`scanSymbolSubHour(${symbol}) failed: ${msg}`);
+        }
+        return count;
+    }
 }
