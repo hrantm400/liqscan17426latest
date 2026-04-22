@@ -5,6 +5,7 @@ import { useAuthStore } from '../store/authStore';
 import { userApi, authApi } from '../services/userApi';
 import { useQuery } from '@tanstack/react-query';
 import { SubscriptionBadge } from './subscriptions/SubscriptionBadge';
+import { ProLabelPill } from './subscriptions/ProLabelPill';
 import { MobileHeader } from './layout/MobileHeader';
 import { MobileBottomNav } from './layout/MobileBottomNav';
 import { NeonLoader } from './shared/NeonLoader';
@@ -241,6 +242,19 @@ const MainLayout: React.FC = () => {
 
                 <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-3">
                     <div className="flex flex-col gap-4 pb-4">
+                        {/* CORE-LAYER
+                            Static group — no collapse state. If collapsibility is wanted later,
+                            every existing section needs the same pattern for consistency. */}
+                        <div className="flex flex-col gap-1">
+                            <div className={`flex items-center justify-between px-3 mb-1 transition-opacity duration-300 whitespace-nowrap ${isPinned ? 'opacity-100' : 'opacity-0 group-hover/sidebar:opacity-100'}`}>
+                                <p className="text-[10px] font-bold tracking-[0.15em] dark:text-gray-500 light:text-slate-400 uppercase">Core-Layer</p>
+                                <ProLabelPill />
+                            </div>
+                            <Link to="/core-layer/se" className={linkCls('/core-layer/se').link}><span className={linkCls('/core-layer/se').icon}>grain</span><span className={linkCls('/core-layer/se').label}>SE</span></Link>
+                            <Link to="/core-layer/crt" className={linkCls('/core-layer/crt').link}><span className={linkCls('/core-layer/crt').icon}>radar</span><span className={linkCls('/core-layer/crt').label}>CRT</span></Link>
+                            <Link to="/core-layer/bias" className={linkCls('/core-layer/bias').link}><span className={linkCls('/core-layer/bias').icon}>stacked_line_chart</span><span className={linkCls('/core-layer/bias').label}>Bias</span></Link>
+                        </div>
+
                         {/* MARKETS */}
                         <div className="flex flex-col gap-1">
                             <p className={`px-3 text-[10px] font-bold tracking-[0.15em] dark:text-gray-500 light:text-slate-400 uppercase mb-1 transition-opacity duration-300 whitespace-nowrap ${isPinned ? 'opacity-100' : 'opacity-0 group-hover/sidebar:opacity-100'}`}>MARKETS</p>
