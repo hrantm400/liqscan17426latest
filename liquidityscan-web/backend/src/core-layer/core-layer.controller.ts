@@ -7,7 +7,7 @@ import {
     Query,
     UseGuards,
 } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { SkipThrottle, Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from '../auth/decorators/public.decorator';
 import { CoreLayerQueryService } from './core-layer.query.service';
 import { ListCoreLayerSignalsQueryDto } from './dto/list-core-layer-signals.query.dto';
@@ -33,11 +33,15 @@ import { ListCoreLayerSignalsQueryDto } from './dto/list-core-layer-signals.quer
  *   frontend via the existing useTierGating hook.
  *
  * Throttling:
- *   Named `default` throttler (120 req/min per IP). Burst is unlikely —
- *   the frontend hits these three routes at most once per page view.
+ *   Named `default` throttler (120 req/min per IP). The globally-registered
+ *   `burst` (5 req / 5 min) and `strict` (10 req / min) throttlers are
+ *   explicitly skipped — they are tuned for write / heavy-compute paths
+ *   and would false-positive on a normal page load (overview + variant +
+ *   pair detail each fire 2-4 list/stats/detail reads in parallel).
  */
 @Controller('core-layer')
 @UseGuards(ThrottlerGuard)
+@SkipThrottle({ burst: true, strict: true })
 @Throttle({ default: { limit: 120, ttl: 60000 } })
 export class CoreLayerController {
     private readonly logger = new Logger(CoreLayerController.name);
