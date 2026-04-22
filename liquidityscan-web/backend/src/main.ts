@@ -84,7 +84,14 @@ async function bootstrap() {
       'https://region1.google-analytics.com',
       'https://*.clarity.ms',
     ],
-    frameSrc: ["'self'", 'https://accounts.google.com'],
+    frameSrc: [
+      "'self'",
+      'https://accounts.google.com',
+      // Wistia iframe player used by the Courses feature and the Phase 2
+      // Core-Layer intro videos. JS SDK is intentionally not used — iframe
+      // embed only — so fast.wistia.com is NOT needed in script-src.
+      'https://fast.wistia.net',
+    ],
     objectSrc: ["'none'"],
     baseUri: ["'self'"],
     formAction: ["'self'"],
