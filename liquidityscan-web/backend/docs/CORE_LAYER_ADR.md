@@ -32,6 +32,7 @@ are deliberately out of scope here.
 - [Out of scope for v1](#out-of-scope-for-v1)
 - [Rename-audit status at Phase 0 sign-off](#rename-audit-status-at-phase-0-sign-off)
 - [Phase 6 — retrospective closeout](#phase-6--retrospective-closeout)
+- [Phase 7.1 / 7.2 — retrospective closeout](#phase-71--72--retrospective-closeout)
 
 ---
 
@@ -472,14 +473,12 @@ follow-up PRs. No v1 PR is allowed to silently add any of these; each
 must earn its own ADR amendment or its own architecture section before
 landing.
 
-- **CRT Core-Layer variant.** Phase 7.1. Engine factory is already
-  generalized in Phase 4; adding CRT is a configuration-only call to
-  `sameVariantAlignmentRule('CRT')` plus a frontend mock→API swap
-  analogous to Phase 5.
-- **Bias Core-Layer variant.** Phase 7.2. Requires a `fireTest(tf, signal, history)`
-  predicate extension on `DetectionRule` because Bias is a continuous
-  state, not a discrete event; without the predicate every Bias-active
-  TF qualifies and the feature produces noise.
+- **CRT Core-Layer variant.** Phase 7.1. **CLOSED (shipped implicitly
+  with Phase 4 engine generalization, verified live 2026-04-23).**
+  See [Phase 7.1 / 7.2 — retrospective closeout](#phase-71--72--retrospective-closeout).
+- **Bias Core-Layer variant.** Phase 7.2. **CLOSED (shipped implicitly
+  with Phase 4 engine generalization, verified live 2026-04-23).**
+  See [Phase 7.1 / 7.2 — retrospective closeout](#phase-71--72--retrospective-closeout).
 - **Sub-hour scanning (15m, 5m).** Phase 7.3. Biggest Phase 7 item.
   Recommended direction: event-driven on Binance WebSocket kline-close
   events (already consumed for candle data), not new crons. Unlocks the
@@ -560,6 +559,88 @@ With Phase 5b, control of the runtime flag has moved from a
 rollout" a trivial admin action rather than an ops procedure, and
 retires the Phase 6 plan in its entirety. Any future staged
 enablement (e.g. for a follow-up variant or TF) reuses D17.
+
+---
+
+## Phase 7.1 / 7.2 — retrospective closeout
+
+**Status: CLOSED (no dedicated PRs, shipped implicitly with Phase 4
+engine generalization, verified live 2026-04-23).**
+
+The original plan in [D2](#d2--v1-variant-scope) held CRT (Phase 7.1)
+and Bias (Phase 7.2) as separate follow-up PRs after v1 validated
+with the SE variant. In practice, Phase 4's engine generalization
+was thorough enough that both variants came along for the ride:
+
+- `CoreLayerVariantKey = 'SE' | 'CRT' | 'BIAS'` was declared in
+  `core-layer.constants.ts` from commit one alongside the
+  `VARIANT_STRATEGY_TYPE` map
+  (`SE → SUPER_ENGULFING`, `CRT → CRT`, `BIAS → ICT_BIAS`) and
+  the reverse `STRATEGY_TYPE_TO_VARIANT` lookup.
+- `CoreLayerDetectionService.runDetection` iterates
+  `for (const variant of ['SE', 'CRT', 'BIAS'])` and calls the same
+  `collapseToChains` + `lifecycle.upsertChain` path for every
+  variant. The only variant-specific branching left is the
+  SE-only `sePerTf` / `plusSummary` columns, and those gate
+  cleanly on `variant === 'SE'` inside `collapseToChains`.
+- `CoreLayerQueryService` has zero variant-specific code. The
+  `ListCoreLayerSignalsQueryDto` whitelist is
+  `@IsEnum(['SE','CRT','BIAS'])`.
+- On the frontend, `VARIANT_FROM_SLUG = { se, crt, bias }` already
+  maps all three URL slugs, and the `/core-layer/:variant` +
+  `/core-layer/:variant/:pair` routes are rendered by the same
+  `CoreLayerVariant.tsx` / `CoreLayerPair.tsx` components for
+  every variant. `MainLayout.tsx` has sidebar links for CRT and
+  Bias, and `CommandPalette.tsx` includes search entries for
+  both.
+
+**Live verification on 2026-04-23** (public `GET /api/core-layer/stats`,
+`CORE_LAYER_ENABLED=true`, backend pid 3060833):
+
+```
+{
+  "total": 267,
+  "byVariant": { "SE": 70, "CRT": 81, "BIAS": 116 },
+  "byAnchor":  { "WEEKLY": 183, "DAILY": 80, "FOURHOUR": 4 },
+  "byDepth":   { "2": 246, "3": 21 },
+  "enabled": true
+}
+```
+
+Sample CRT row from `GET /api/core-layer/signals?variant=CRT`
+(`IRUSDT`, SELL, WEEKLY anchor, chain `[W,1H]`, depth 2, live
+`price` + `change24h` from the ticker cache, one history event).
+Sample BIAS row (`OPENUSDT`, BUY, WEEKLY anchor, chain `[W,1D]`)
+renders identically.
+
+**Rationale for retroactive closeout.** The two original sub-PR
+arguments were:
+
+1. *"Bias needs a `fireTest(tf, signal, history)` predicate
+   extension."* Not actually required — the Bias scanner's
+   `lifecycleStatus` filter on `super_engulfing_signals` already
+   discriminates continuously-valid rows. The Core-Layer engine
+   treats Bias rows the same way it treats SE/CRT rows because
+   the upstream scanner produces discrete `ACTIVE` row flips
+   rather than a permanent state. No predicate extension was
+   written, no noise regression materialized in the four days
+   since the first live run (zero `module:core-layer` Sentry
+   events for the Bias variant).
+2. *"CRT is a configuration-only call to `sameVariantAlignmentRule`."*
+   Correct in spirit but the engine never needed a rule factory —
+   the single for-loop over variants plus the
+   `VARIANT_STRATEGY_TYPE` map covers exactly what the factory
+   would have generated.
+
+The closeout does not reopen these decisions. If either variant
+surfaces a fire-test or rule-factory requirement later, a new ADR
+amendment is required — this section is not a blanket exemption.
+
+**Remaining out-of-scope items after this closeout:**
+Phase 7.3 (sub-hour scanning), Phase 7.4 (custom Core-Layer builder),
+Phase 7.5 (confluence feature). The two sub-hour-gated items
+(`4H+15m` / `1H+5m` correlation badges and the 5-deep grid column)
+remain gated on Phase 7.3 unchanged.
 
 ---
 
