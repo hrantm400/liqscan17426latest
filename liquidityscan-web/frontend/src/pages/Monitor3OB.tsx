@@ -9,6 +9,7 @@ import { StaticMiniChart } from '../components/StaticMiniChart';
 import { FilterMenu } from '../components/shared/FilterMenu';
 import { TimeDisplay } from '../components/shared/TimeDisplay';
 import { PageHeader } from '../components/layout/PageHeader';
+import { ScannerHero } from '../components/shared/ScannerHero';
 import { AnimatedCard } from '../components/animations/AnimatedCard';
 import { AnimatedNumber } from '../components/animations/AnimatedNumber';
 import { AnimatedList } from '../components/animations/AnimatedList';
@@ -270,6 +271,21 @@ export function Monitor3OB() {
                     ]}
                 />
             </div>
+
+            <ScannerHero
+                slug="3ob"
+                eyebrow="Strategy E-08 · 3-OB"
+                icon="layers"
+                title="Three Order Blocks"
+                subtitle="Liquidity-block stacking patterns across 4H / 1D / 1W."
+                tone="violet"
+                kpiTotal={timeframeStats['4h'] + timeframeStats['1d'] + timeframeStats['1w']}
+                kpis={[
+                    { label: '4H', value: timeframeStats['4h'], hint: 'Mid-term' },
+                    { label: '1D', value: timeframeStats['1d'], hint: 'Daily' },
+                    { label: '1W', value: timeframeStats['1w'], hint: 'Macro' },
+                ]}
+            />
 
             {/* Timeframe Cards */}
             <motion.div

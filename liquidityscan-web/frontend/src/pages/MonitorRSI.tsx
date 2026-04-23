@@ -9,6 +9,7 @@ import { FilterMenu } from '../components/shared/FilterMenu';
 import { TrendIndicator } from '../components/shared/TrendIndicator';
 import { TimeDisplay } from '../components/shared/TimeDisplay';
 import { PageHeader } from '../components/layout/PageHeader';
+import { ScannerHero } from '../components/shared/ScannerHero';
 import { AnimatedCard } from '../components/animations/AnimatedCard';
 import { AnimatedNumber } from '../components/animations/AnimatedNumber';
 import { AnimatedList } from '../components/animations/AnimatedList';
@@ -290,6 +291,21 @@ export function MonitorRSI() {
         ]}
         lastUpdated="Just now"
         onRefresh={refetch}
+      />
+
+      <ScannerHero
+        slug="rsi"
+        eyebrow="Strategy C-12 · RSI Divergence"
+        icon="ssid_chart"
+        title="RSI Divergence"
+        subtitle="Momentum-vs-price divergences across 1H / 4H / 1D."
+        tone="amber"
+        kpiTotal={timeframeStats['1h'] + timeframeStats['4h'] + timeframeStats['1d']}
+        kpis={[
+          { label: '1H', value: timeframeStats['1h'], hint: 'Intraday' },
+          { label: '4H', value: timeframeStats['4h'], hint: 'Mid-term' },
+          { label: '1D', value: timeframeStats['1d'], hint: 'Daily' },
+        ]}
       />
 
       {/* Free Forever: RSI Divergence is a context filter — info only */}

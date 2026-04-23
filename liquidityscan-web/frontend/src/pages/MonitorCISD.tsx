@@ -9,6 +9,7 @@ import { StaticMiniChart } from '../components/StaticMiniChart';
 import { FilterMenu } from '../components/shared/FilterMenu';
 import { TimeDisplay } from '../components/shared/TimeDisplay';
 import { PageHeader } from '../components/layout/PageHeader';
+import { ScannerHero } from '../components/shared/ScannerHero';
 import { AnimatedCard } from '../components/animations/AnimatedCard';
 import { AnimatedNumber } from '../components/animations/AnimatedNumber';
 import { AnimatedList } from '../components/animations/AnimatedList';
@@ -275,6 +276,21 @@ export function MonitorCISD() {
                     {/* Signal type removed */}
                 </div>
             </div>
+
+            <ScannerHero
+                slug="cisd"
+                eyebrow="Strategy D-07 · CISD"
+                icon="swap_horizontal_circle"
+                title="Change in State of Delivery"
+                subtitle="Market structure shifts across 4H / 1D / 1W."
+                tone="fuchsia"
+                kpiTotal={timeframeStats['4h'] + timeframeStats['1d'] + timeframeStats['1w']}
+                kpis={[
+                    { label: '4H', value: timeframeStats['4h'], hint: 'Mid-term' },
+                    { label: '1D', value: timeframeStats['1d'], hint: 'Daily' },
+                    { label: '1W', value: timeframeStats['1w'], hint: 'Macro' },
+                ]}
+            />
 
             {/* Timeframe Cards */}
             <motion.div

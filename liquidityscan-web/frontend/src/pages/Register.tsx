@@ -131,34 +131,60 @@ export function Register() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center dark:bg-background-dark light:bg-background-light px-4 relative">
+    <div className="min-h-screen flex items-center justify-center dark:bg-background-dark light:bg-background-light px-4 py-8 relative overflow-hidden">
+      {/* cinematic ambient background */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0 dark:bg-cinematic-gradient light:bg-cinematic-gradient-light opacity-90"
+      />
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-grid-pattern opacity-40" />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -top-32 -left-32 h-96 w-96 rounded-full bg-primary/15 blur-3xl"
+      />
+      <span
+        aria-hidden
+        className="pointer-events-none absolute -bottom-32 -right-32 h-96 w-96 rounded-full bg-primary/10 blur-3xl"
+      />
+
       {/* Back to Landing Button */}
-      <a 
-        href="/" 
-        className="absolute top-4 left-4 flex items-center gap-2 px-3 py-2 rounded-lg dark:bg-white/5 light:bg-green-50 dark:hover:bg-white/10 light:hover:bg-green-100 dark:text-gray-400 light:text-text-light-secondary dark:hover:text-white light:hover:text-text-dark transition-all text-sm font-medium border dark:border-white/10 light:border-green-300/50 z-10"
+      <a
+        href="/"
+        className="absolute top-4 left-4 inline-flex items-center gap-2 px-3 py-2 rounded-full dark:bg-white/5 light:bg-white/80 backdrop-blur-sm dark:hover:bg-white/10 light:hover:bg-white dark:text-gray-400 light:text-text-light-secondary dark:hover:text-primary light:hover:text-primary transition-all text-xs font-bold uppercase tracking-wider border dark:border-white/10 light:border-green-300/50 hover:border-primary/30 z-10"
       >
         <span className="material-symbols-outlined text-base">arrow_back</span>
-        <span>Back to Landing</span>
+        <span>Landing</span>
       </a>
 
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md"
+        className="relative w-full max-w-md"
       >
 
-        <div className="glass-panel rounded-2xl p-8">
-          {/* Logo/Title */}
-          <div className="text-center mb-8">
-            <h1 className="text-3xl font-black dark:text-white light:text-text-dark mb-2">
-              Create Account
-            </h1>
-            <p className="text-sm dark:text-gray-400 light:text-text-light-secondary">
-              Sign up to get started
-            </p>
+        <div className="glass-panel rounded-2xl p-8 shadow-glow-md">
+          {/* Brand chip + title */}
+          <div className="text-center mb-8 flex flex-col items-center gap-3">
+            <span className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full border border-primary/30 bg-primary/10">
+              <span className="material-symbols-outlined text-primary text-[16px] drop-shadow-[0_0_6px_rgba(19,236,55,0.5)]">
+                rocket_launch
+              </span>
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+                Join the scanner
+              </span>
+            </span>
+            <div>
+              <h1 className="text-3xl font-black tracking-tight dark:text-white light:text-text-dark">
+                Create your account
+              </h1>
+              <p className="mt-1 text-sm dark:text-gray-400 light:text-text-light-secondary">
+                Free Forever to start. Upgrade any time.
+              </p>
+            </div>
             {referralCode && (
-              <div className="mt-2 px-3 py-1 rounded-lg bg-primary/10 border border-primary/30 text-primary text-xs inline-block">
-                Referred by: {referralCode}
+              <div className="mt-1 inline-flex items-center gap-1.5 px-2 py-1 rounded-full bg-primary/10 border border-primary/30 text-primary text-[10px] font-black uppercase tracking-widest">
+                <span className="material-symbols-outlined text-[12px]">handshake</span>
+                Referred by {referralCode}
               </div>
             )}
           </div>
@@ -179,7 +205,7 @@ export function Register() {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={handleGoogleLogin}
-            className="w-full mb-4 flex items-center justify-center gap-3 px-4 py-3 rounded-xl dark:bg-white/5 light:bg-green-50 dark:border-white/10 light:border-green-300 dark:text-white light:text-text-dark dark:hover:bg-white/10 light:hover:bg-green-100 transition-all font-medium"
+            className="w-full mb-4 flex items-center justify-center gap-3 px-4 py-3 rounded-xl border dark:bg-white/[0.04] light:bg-white dark:border-white/10 light:border-green-300 dark:text-white light:text-text-dark dark:hover:bg-white/[0.08] light:hover:bg-green-50 hover:border-primary/30 transition-all font-bold backdrop-blur-sm"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path
@@ -215,76 +241,63 @@ export function Register() {
 
           {/* Email Register Form */}
           <form onSubmit={handleEmailRegister} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium dark:text-gray-300 light:text-text-dark mb-2">
-                Full Name
-              </label>
-              <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                data-clarity-mask="true"
-                className="w-full px-4 py-3 rounded-xl dark:bg-white/5 light:bg-white dark:border-white/10 light:border-green-300 dark:text-white light:text-text-dark dark:placeholder:text-gray-600 light:text-slate-400 light:placeholder:text-text-light-secondary focus:outline-none focus:ring-2 focus:ring-primary transition-all"
-                placeholder="John Doe"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium dark:text-gray-300 light:text-text-dark mb-2">
-                Email
-              </label>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                data-clarity-mask="true"
-                className="w-full px-4 py-3 rounded-xl dark:bg-white/5 light:bg-white dark:border-white/10 light:border-green-300 dark:text-white light:text-text-dark dark:placeholder:text-gray-600 light:text-slate-400 light:placeholder:text-text-light-secondary focus:outline-none focus:ring-2 focus:ring-primary transition-all"
-                placeholder="you@example.com"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium dark:text-gray-300 light:text-text-dark mb-2">
-                Password
-              </label>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                minLength={6}
-                data-clarity-mask="true"
-                className="w-full px-4 py-3 rounded-xl dark:bg-white/5 light:bg-white dark:border-white/10 light:border-green-300 dark:text-white light:text-text-dark dark:placeholder:text-gray-600 light:text-slate-400 light:placeholder:text-text-light-secondary focus:outline-none focus:ring-2 focus:ring-primary transition-all"
-                placeholder="••••••••"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium dark:text-gray-300 light:text-text-dark mb-2">
-                Confirm Password
-              </label>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                required
-                minLength={6}
-                data-clarity-mask="true"
-                className="w-full px-4 py-3 rounded-xl dark:bg-white/5 light:bg-white dark:border-white/10 light:border-green-300 dark:text-white light:text-text-dark dark:placeholder:text-gray-600 light:text-slate-400 light:placeholder:text-text-light-secondary focus:outline-none focus:ring-2 focus:ring-primary transition-all"
-                placeholder="••••••••"
-              />
-            </div>
+            <FormField
+              label="Full Name"
+              icon="person"
+              type="text"
+              value={name}
+              onChange={setName}
+              placeholder="John Doe"
+              required
+            />
+            <FormField
+              label="Email"
+              icon="mail"
+              type="email"
+              value={email}
+              onChange={setEmail}
+              placeholder="you@example.com"
+              required
+            />
+            <FormField
+              label="Password"
+              icon="lock"
+              type="password"
+              value={password}
+              onChange={setPassword}
+              placeholder="••••••••"
+              required
+              minLength={6}
+            />
+            <FormField
+              label="Confirm Password"
+              icon="lock_reset"
+              type="password"
+              value={confirmPassword}
+              onChange={setConfirmPassword}
+              placeholder="••••••••"
+              required
+              minLength={6}
+            />
 
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={{ scale: 1.01 }}
+              whileTap={{ scale: 0.99 }}
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-xl bg-primary text-black font-bold hover:bg-primary/90 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full py-3 rounded-xl bg-primary text-black font-black tracking-wide uppercase shadow-glow-md hover:shadow-glow-lg hover:bg-primary-hover transition-all disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2"
             >
-              {loading ? 'Creating account...' : 'Create Account'}
+              {loading ? (
+                <>
+                  <span className="w-4 h-4 rounded-full border-2 border-black/30 border-t-black animate-spin" />
+                  Creating account
+                </>
+              ) : (
+                <>
+                  <span className="material-symbols-outlined text-[18px]">rocket_launch</span>
+                  Create Account
+                </>
+              )}
             </motion.button>
           </form>
 
@@ -295,7 +308,7 @@ export function Register() {
             </span>
             <Link
               to="/login"
-              className="text-primary font-medium hover:underline"
+              className="text-primary font-bold hover:underline"
             >
               Sign in
             </Link>
@@ -305,3 +318,46 @@ export function Register() {
     </div>
   );
 }
+
+interface FormFieldProps {
+  label: string;
+  icon: string;
+  type: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder: string;
+  required?: boolean;
+  minLength?: number;
+}
+
+const FormField: React.FC<FormFieldProps> = ({
+  label,
+  icon,
+  type,
+  value,
+  onChange,
+  placeholder,
+  required,
+  minLength,
+}) => (
+  <div>
+    <label className="block text-[10px] font-black uppercase tracking-widest dark:text-gray-400 light:text-text-light-secondary mb-2">
+      {label}
+    </label>
+    <div className="relative">
+      <span className="absolute inset-y-0 left-3 flex items-center text-primary/70 pointer-events-none">
+        <span className="material-symbols-outlined text-[18px]">{icon}</span>
+      </span>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        required={required}
+        minLength={minLength}
+        data-clarity-mask="true"
+        className="w-full pl-10 pr-4 py-3 rounded-xl border dark:bg-white/[0.03] light:bg-white dark:border-white/10 light:border-green-300 dark:text-white light:text-text-dark dark:placeholder:text-gray-600 light:placeholder:text-text-light-secondary focus:outline-none focus:border-primary/50 focus:ring-2 focus:ring-primary/20 transition-all"
+        placeholder={placeholder}
+      />
+    </div>
+  </div>
+);
