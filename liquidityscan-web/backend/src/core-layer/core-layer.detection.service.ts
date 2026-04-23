@@ -15,6 +15,7 @@ import {
     classifyAnchor,
     inferSePatternKind,
     normalizeDirection,
+    pruneTemporallyIncoherent,
 } from './core-layer.helpers';
 import { CoreLayerLifecycleService } from './core-layer.lifecycle.service';
 
@@ -288,6 +289,17 @@ export class CoreLayerDetectionService {
             }
         }
 
+        // Spec §4 — temporal-coherence gate. For each bucket, every (higher, lower)
+        // TF pair must satisfy `lower.ts ∈ [higher.ts, higher.ts + 2 * candleMs[higher])`.
+        // Upstream scanner lifecycle sometimes leaves stale ACTIVE rows around
+        // (e.g. a weekly signal from 3 weeks ago that never got closed when a newer
+        // one fired). Without this gate those stale HTF rows stack with fresh LTFs
+        // and produce phantom alignments — see PTBUSDT where W@Apr-06 was chaining
+        // with 1D@Apr-21, a ~15-day gap.
+        for (const bucket of buckets.values()) {
+            pruneTemporallyIncoherent(bucket);
+        }
+
         const out: Array<{
             pair: string;
             direction: Direction;
@@ -311,4 +323,5 @@ export class CoreLayerDetectionService {
         }
         return out;
     }
+
 }

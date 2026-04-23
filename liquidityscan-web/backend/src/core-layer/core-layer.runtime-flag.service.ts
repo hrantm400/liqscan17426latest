@@ -76,6 +76,12 @@ export interface CoreLayerSubHourRuntimeStatus {
 
 const APP_CONFIG_ID = 'singleton';
 const RECENT_ERRORS_LIMIT = 10;
+/**
+ * Spec §11 — after 3 consecutive tick failures the service trips its circuit
+ * breaker and auto-disables. An admin flipping the flag back on clears the
+ * counter (setEnabled) and is the documented recovery path.
+ */
+const CIRCUIT_BREAKER_THRESHOLD = 3;
 
 @Injectable()
 export class CoreLayerRuntimeFlagService implements OnModuleInit {
@@ -239,6 +245,30 @@ export class CoreLayerRuntimeFlagService implements OnModuleInit {
         if (this.recentErrors.length > RECENT_ERRORS_LIMIT) {
             this.recentErrors.length = RECENT_ERRORS_LIMIT;
         }
+        this.maybeTripHourlyBreaker();
+    }
+
+    /**
+     * Circuit-breaker check for the hourly tick. Auto-disables when the
+     * threshold is reached and the flag is still on. No-op once disabled —
+     * recovery is the admin's explicit `setEnabled(true)` call, which clears
+     * `consecutiveFailures` per ADR D15.
+     */
+    private maybeTripHourlyBreaker(): void {
+        if (!this.enabled) return;
+        if (this.consecutiveFailures < CIRCUIT_BREAKER_THRESHOLD) return;
+        this.logger.error(
+            `Core-Layer hourly circuit breaker tripped after ${this.consecutiveFailures} consecutive failures — auto-disabling`,
+        );
+        Sentry.captureMessage(
+            `Core-Layer hourly circuit breaker tripped (${this.consecutiveFailures} failures)`,
+            { tags: { module: 'core-layer' }, level: 'error' },
+        );
+        void this.setEnabled(false, 'circuit-breaker').catch((e) => {
+            this.logger.error(
+                `Failed to auto-disable hourly flag via circuit breaker: ${e instanceof Error ? e.message : String(e)}`,
+            );
+        });
     }
 
     getStatus(): CoreLayerRuntimeStatus {
@@ -308,6 +338,29 @@ export class CoreLayerRuntimeFlagService implements OnModuleInit {
         if (this.subHourRecentErrors.length > RECENT_ERRORS_LIMIT) {
             this.subHourRecentErrors.length = RECENT_ERRORS_LIMIT;
         }
+        this.maybeTripSubHourBreaker();
+    }
+
+    /**
+     * Circuit-breaker check for the sub-hour dispatcher. Independent of the
+     * hourly breaker so a broken websocket path cannot drag the hourly full-
+     * universe sweep down with it.
+     */
+    private maybeTripSubHourBreaker(): void {
+        if (!this.subHourEnabled) return;
+        if (this.subHourConsecutiveFailures < CIRCUIT_BREAKER_THRESHOLD) return;
+        this.logger.error(
+            `Core-Layer sub-hour circuit breaker tripped after ${this.subHourConsecutiveFailures} consecutive failures — auto-disabling`,
+        );
+        Sentry.captureMessage(
+            `Core-Layer sub-hour circuit breaker tripped (${this.subHourConsecutiveFailures} failures)`,
+            { tags: { module: 'core-layer' }, level: 'error' },
+        );
+        void this.setSubHourEnabled(false, 'circuit-breaker').catch((e) => {
+            this.logger.error(
+                `Failed to auto-disable sub-hour flag via circuit breaker: ${e instanceof Error ? e.message : String(e)}`,
+            );
+        });
     }
 
     getSubHourStatus(): CoreLayerSubHourRuntimeStatus {
