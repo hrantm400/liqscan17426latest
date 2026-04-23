@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { userApi } from '../services/userApi';
 import { toast } from 'react-hot-toast';
+import { PageHero } from '../components/shared/PageHero';
 
 interface AffiliateStats {
     code: string;
@@ -73,11 +74,15 @@ export function AffiliateDashboard() {
     // No affiliate account yet → show signup
     if (!stats) {
         return (
-            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="p-6 md:p-8 max-w-2xl mx-auto space-y-6">
-                <div className="text-center">
-                    <h1 className="text-3xl font-black dark:text-white light:text-text-dark mb-2">Affiliate Program</h1>
-                    <p className="dark:text-gray-400 light:text-gray-500">Earn 30% recurring commission on every referral.</p>
-                </div>
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="p-4 md:p-6 max-w-2xl mx-auto space-y-5">
+                <PageHero
+                    eyebrow="Affiliate · Recurring revenue"
+                    icon="handshake"
+                    title="Affiliate Program"
+                    subtitle="Earn 30% recurring commission on every referral."
+                    tone="primary"
+                    unboxed
+                />
 
                 <div className="glass-panel rounded-2xl p-8 text-center border dark:border-white/10 light:border-green-300">
                     <span className="material-symbols-outlined text-primary text-5xl mb-4 block">handshake</span>
@@ -133,14 +138,21 @@ export function AffiliateDashboard() {
 
     // Affiliate Dashboard
     return (
-        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="p-6 md:p-8 max-w-4xl mx-auto space-y-6">
-            {/* Header */}
-            <div>
-                <h1 className="text-3xl font-black dark:text-white light:text-text-dark mb-1">Affiliate Dashboard</h1>
-                <p className="text-sm dark:text-gray-400 light:text-gray-500">
-                    Tier: <strong className="text-primary">{stats.tier}</strong> · {stats.commissionRate}% commission
-                </p>
-            </div>
+        <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="p-4 md:p-6 max-w-4xl mx-auto space-y-5">
+            <PageHero
+                eyebrow={`Affiliate · ${stats.tier} tier`}
+                icon="handshake"
+                title="Affiliate Dashboard"
+                subtitle={`${stats.commissionRate}% commission · code ${stats.code}`}
+                tone="primary"
+                unboxed
+                rightSlot={
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-primary/30 bg-primary/10 text-primary text-[11px] font-black uppercase tracking-widest shadow-glow-sm">
+                        <span className="material-symbols-outlined text-[14px]">paid</span>
+                        ${stats.totalEarned.toFixed(2)}
+                    </span>
+                }
+            />
 
             {/* Referral Link */}
             <div className="glass-panel rounded-2xl p-5 border dark:border-white/10 light:border-green-300 flex items-center gap-3">

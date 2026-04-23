@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { scaleInVariants, staggerContainer, listItemVariants } from '../utils/animations';
+import { PageHero } from '../components/shared/PageHero';
 
 export function Support() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -13,31 +14,23 @@ export function Support() {
       exit="exit"
       variants={staggerContainer}
     >
-      {/* Header */}
-      <div className="flex flex-col gap-6 px-4 pt-4 pb-2 md:px-8 md:pt-8 md:pb-4 shrink-0">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-xs font-medium dark:text-gray-500 light:text-text-light-secondary uppercase tracking-wider">
-            <span className="dark:hover:text-white light:hover:text-text-dark cursor-pointer transition-colors">Tools</span>
-            <span className="material-symbols-outlined text-[10px]">chevron_right</span>
-            <span className="text-primary drop-shadow-[0_0_5px_rgba(19,236,55,0.5)]">Support</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-black tracking-tight dark:text-white light:text-text-dark flex items-center gap-3">
-              Support Center
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold dark:bg-white/5 light:bg-green-50 dark:border-white/10 light:border-green-300 dark:text-gray-400 light:text-text-light-secondary uppercase tracking-wider align-middle border">
-                Live Feed
-              </span>
-            </h1>
-            <div className="flex items-center gap-3">
-              <span className="text-xs dark:text-gray-400 light:text-text-light-secondary font-medium">
-                Last updated: <span className="dark:text-white light:text-text-dark">Just now</span>
-              </span>
-              <button className="p-2 rounded-lg dark:bg-white/5 light:bg-green-50 dark:hover:bg-white/10 light:hover:bg-green-100 dark:text-gray-400 light:text-text-light-secondary dark:hover:text-white light:hover:text-text-dark transition-colors border dark:border-transparent light:border-green-300">
-                <span className="material-symbols-outlined text-xl">refresh</span>
-              </button>
-            </div>
-          </div>
-        </div>
+      <div className="px-4 md:px-6 pt-4 md:pt-6 shrink-0">
+        <PageHero
+          eyebrow="Support · Help center"
+          icon="support_agent"
+          title="Support Center"
+          subtitle="Search the knowledge base, browse categories, or contact us directly."
+          tone="primary"
+          unboxed
+          rightSlot={
+            <button
+              className="grid h-9 w-9 place-items-center rounded-lg border dark:border-white/10 light:border-slate-200 dark:bg-white/[0.04] light:bg-white dark:text-gray-300 light:text-slate-600 hover:text-primary hover:border-primary/30 transition-colors"
+              title="Refresh"
+            >
+              <span className="material-symbols-outlined text-[18px]">refresh</span>
+            </button>
+          }
+        />
       </div>
 
       {/* Content */}
