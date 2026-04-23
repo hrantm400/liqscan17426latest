@@ -2,13 +2,20 @@ import React, { useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { createChart, ColorType, type Time } from 'lightweight-charts';
 import { useTheme } from '../../contexts/ThemeContext';
+import { shouldShowDirectionWarning } from '../../core-layer/helpers';
 import { fetchCandles, type ChartCandle } from '../../services/candles';
-import type { Direction, TF, TFLifeState } from '../../core-layer/types';
+import type { CoreLayerVariant, Direction, TF, TFLifeState } from '../../core-layer/types';
 
 interface CoreLayerChartProps {
   pair: string;
   tf: TF;
   direction: Direction;
+  /**
+   * Chain variant. Drives the per-variant direction-warning rule on the
+   * signal bar: SE requires a directionally-matching close, CRT/BIAS do
+   * not (both can legitimately fire on either candle color).
+   */
+  variant: CoreLayerVariant;
   /**
    * Close-time of the signal candle on this TF (epoch ms) — the last
    * aligned candle that Core-Layer considers definitive on this TF.
@@ -55,6 +62,10 @@ const MARKER_COLOR: Record<TFLifeState, string> = {
 
 const UP_COLOR = '#13ec37';
 const DOWN_COLOR = '#ff4444';
+// Warning tint used when the signal candle's close contradicts the chain's
+// declared direction *for a variant whose pattern requires a matching close*.
+// SE only — CRT and BIAS permit either body color on the signal bar.
+const WARN_COLOR = '#f97316';
 
 /**
  * Interactive candlestick mini-chart for Core-Layer pair-detail tiles,
@@ -79,6 +90,7 @@ export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
   pair,
   tf,
   direction,
+  variant,
   signalCloseMs = null,
   lifeState = 'steady',
   candleCount = 30,
@@ -137,7 +149,8 @@ export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
       candles={windowCandles}
       signalIdx={signalIdx}
       isDark={isDark}
-      isLong={direction === 'BUY'}
+      variant={variant}
+      direction={direction}
       markerColor={MARKER_COLOR[lifeState]}
       loading={query.isLoading}
       className={className}
@@ -149,7 +162,8 @@ interface ChartBodyProps {
   candles: ChartCandle[];
   signalIdx: number;
   isDark: boolean;
-  isLong: boolean;
+  variant: CoreLayerVariant;
+  direction: Direction;
   markerColor: string;
   loading: boolean;
   className: string;
@@ -159,11 +173,13 @@ const ChartBody: React.FC<ChartBodyProps> = ({
   candles,
   signalIdx,
   isDark,
-  isLong,
+  variant,
+  direction,
   markerColor,
   loading,
   className,
 }) => {
+  const isLong = direction === 'BUY';
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
   const seriesRef = useRef<any>(null);
@@ -301,12 +317,21 @@ const ChartBody: React.FC<ChartBodyProps> = ({
     }
 
     if (signalIdx >= 0 && signalIdx < data.length) {
+      // Direction-coherence check, variant-aware. SE requires the signal
+      // candle's body color to match the chain direction; CRT and BIAS do
+      // not enforce a body-color rule on the signal bar. See
+      // `shouldShowDirectionWarning` for the per-variant contract.
+      const sig = candles[signalIdx];
+      const warn = shouldShowDirectionWarning(variant, direction, {
+        open: sig.open,
+        close: sig.close,
+      });
       const marker = {
         time: data[signalIdx].time,
         position: isLong ? ('belowBar' as const) : ('aboveBar' as const),
-        color: markerColor,
+        color: warn ? WARN_COLOR : markerColor,
         shape: (isLong ? 'arrowUp' : 'arrowDown') as 'arrowUp' | 'arrowDown',
-        text: 'SIGNAL',
+        text: warn ? 'SIGNAL ⚠' : 'SIGNAL',
         size: 1.2,
       };
       try {
@@ -327,7 +352,7 @@ const ChartBody: React.FC<ChartBodyProps> = ({
     } catch {
       /* ignore */
     }
-  }, [candles, signalIdx, isLong, markerColor]);
+  }, [candles, signalIdx, variant, direction, markerColor]);
 
   return (
     <div

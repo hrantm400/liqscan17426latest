@@ -7,6 +7,8 @@ import {
 import type {
   AnchorType,
   CoreLayerSignal,
+  CoreLayerVariant,
+  Direction,
   PlusSummary,
   SePatternKind,
   TF,
@@ -146,6 +148,35 @@ export function computeBreathingPhase(
 /** Sort a chain into canonical (HTF → LTF) order. */
 export function sortChain(chain: TF[]): TF[] {
   return [...chain].sort((a, b) => TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b));
+}
+
+/**
+ * Should the signal-candle marker render with the warning (⚠) tint?
+ *
+ * Variant-aware refinement of the blanket "SELL needs red / BUY needs green"
+ * check. Each upstream detector has different body-color semantics on its
+ * signal candle:
+ *
+ *   - SE (REV/REV+/RUN/RUN+): the signal candle MUST close in the chain's
+ *     direction. A direction-mismatched close is a genuine data
+ *     inconsistency and earns the ⚠.
+ *   - CRT: sweep-plus-body-inside pattern. Body can close in either
+ *     direction — a green-bodied CRT SELL is legitimate.
+ *   - BIAS: fires on candles[i-1]'s close vs candles[i-2]'s range. The
+ *     signal bar's own color is orthogonal to the bias direction.
+ *
+ * Mirrored in `backend/src/core-layer/core-layer.helpers.ts` per ADR D10.
+ * Only the frontend renders the marker; the backend copy is for jest
+ * coverage of the contract.
+ */
+export function shouldShowDirectionWarning(
+  variant: CoreLayerVariant,
+  direction: Direction,
+  candle: { open: number; close: number },
+): boolean {
+  if (variant !== 'SE') return false;
+  if (direction === 'BUY') return candle.close < candle.open;
+  return candle.close > candle.open;
 }
 
 /** Select signals visible to a given tier. Base users never see Pro-only chains. */

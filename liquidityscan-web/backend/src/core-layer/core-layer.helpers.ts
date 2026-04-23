@@ -1,6 +1,7 @@
 import {
     AnchorType,
     CORRELATION_PAIRS,
+    CoreLayerVariantKey,
     Direction,
     PlusSummary,
     SePatternKind,
@@ -129,4 +130,43 @@ export function normalizeDirection(signalType: string | null | undefined): Direc
     if (up === 'BUY' || up === 'BULL' || up === 'BULLISH') return 'BUY';
     if (up === 'SELL' || up === 'BEAR' || up === 'BEARISH') return 'SELL';
     return null;
+}
+
+/**
+ * Should the signal-candle marker render with the warning (⚠) tint?
+ *
+ * Variant-aware refinement of the blanket "SELL needs red / BUY needs green"
+ * check. Each upstream detector has different body-color semantics on its
+ * signal candle:
+ *
+ *   - SE (REV/REV+/RUN/RUN+): the signal candle MUST close in the chain's
+ *     direction. REV_BULLISH wraps a prior bearish candle with a bullish
+ *     close; RUN_PLUS_BEARISH is a bearish close that engulfs the prior
+ *     bullish candle's body. The color rule is part of the pattern
+ *     definition, so a direction-mismatched close is a genuine data
+ *     inconsistency and earns the ⚠.
+ *
+ *   - CRT (CRT SELL / CRT BUY): the signal candle sweeps the prior candle's
+ *     extreme and closes back inside the prior range. The body can close in
+ *     either direction — `crt.detect.ts` imposes no bullish/bearish
+ *     constraint on the signal bar. A green-bodied CRT SELL is a legitimate
+ *     pattern and must not be flagged.
+ *
+ *   - BIAS (ICT bias shift): fires on `candles[i-1]` based on whether its
+ *     close broke the `candles[i-2]` range. Whether that signal candle's
+ *     own body is bullish or bearish is orthogonal to the bias direction —
+ *     `ict-bias.detect.ts` enforces no color rule on the signal bar.
+ *
+ * This helper is mirrored in `frontend/src/core-layer/helpers.ts` per
+ * ADR D10; only the frontend actually renders the marker. Backend keeps
+ * the definition so jest can lock the contract.
+ */
+export function shouldShowDirectionWarning(
+    variant: CoreLayerVariantKey,
+    direction: Direction,
+    candle: { open: number; close: number },
+): boolean {
+    if (variant !== 'SE') return false;
+    if (direction === 'BUY') return candle.close < candle.open;
+    return candle.close > candle.open;
 }
