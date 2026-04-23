@@ -523,7 +523,11 @@ model CoreLayerSignal {
   createdAt         DateTime                @default(now())
   updatedAt         DateTime                @updatedAt
 
-  @@unique([pair, variant, direction, anchor, status], name: "pair_variant_dir_anchor_status")
+  // Uniqueness is enforced via a partial index on ACTIVE rows only (see migration
+  // 20260423012500_core_layer_partial_unique_active). Prisma's @@unique does not
+  // support WHERE clauses, so the partial index is declared in raw SQL there and
+  // kept invisible to the client — which is fine, we never filter by it directly.
+  @@index([pair, variant, direction, anchor, status])
   @@index([variant, status])
   @@index([pair])
   @@index([lastPromotedAt])

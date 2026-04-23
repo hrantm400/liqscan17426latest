@@ -170,3 +170,64 @@ export function shouldShowDirectionWarning(
     if (direction === 'BUY') return candle.close < candle.open;
     return candle.close > candle.open;
 }
+
+/**
+ * Spec §4 temporal-coherence gate. Given a `(pair, direction)` bucket of
+ * per-TF rows, drop any TF whose `detectedAt` is incoherent with the rest of
+ * the bucket. The rule for every (higher, lower) pair is:
+ *
+ *     lower.ts >= higher.ts                              // LTF cannot predate HTF
+ *     lower.ts <  higher.ts + 2 * TF_CANDLE_MS[higher]   // LTF within HTF's candle or the next one
+ *
+ * Drop strategy when a pair violates:
+ *   - LTF predates HTF → LTF is stale, drop LTF
+ *   - LTF is past HTF's 2-candle window → HTF is stale, drop HTF
+ *
+ * Iterates until the remaining set is fully coherent or drops below 2 TFs.
+ *
+ * Why factor 2 (not 1): after an HTF candle closes, its direction remains
+ * "in play" into the immediately-following candle. The spec's example ("W
+ * closing Apr 15, candle covers Apr 15-22") matches a one-candle forward
+ * window — factor 2 = HTF candle + 1 grace candle.
+ *
+ * Mutates `bucket` in-place for caller convenience; detection is already
+ * iterating buckets, no point cloning.
+ */
+export function pruneTemporallyIncoherent(bucket: {
+    tfs: Set<Tf>;
+    tfLastCandleClose: Partial<Record<Tf, number>>;
+    sePerTf?: Partial<Record<Tf, SePatternKind>>;
+}): void {
+    const drop = (tf: Tf) => {
+        bucket.tfs.delete(tf);
+        delete bucket.tfLastCandleClose[tf];
+        if (bucket.sePerTf) delete bucket.sePerTf[tf];
+    };
+
+    let changed = true;
+    while (changed && bucket.tfs.size >= 2) {
+        changed = false;
+        const sorted = Array.from(bucket.tfs).sort(
+            (a, b) => TF_ORDER.indexOf(a) - TF_ORDER.indexOf(b),
+        );
+        outer: for (let i = 0; i < sorted.length; i++) {
+            const higher = sorted[i];
+            const higherTs = bucket.tfLastCandleClose[higher]!;
+            const higherWindowEnd = higherTs + 2 * TF_CANDLE_MS[higher];
+            for (let j = i + 1; j < sorted.length; j++) {
+                const lower = sorted[j];
+                const lowerTs = bucket.tfLastCandleClose[lower]!;
+                if (lowerTs < higherTs) {
+                    drop(lower);
+                    changed = true;
+                    break outer;
+                }
+                if (lowerTs >= higherWindowEnd) {
+                    drop(higher);
+                    changed = true;
+                    break outer;
+                }
+            }
+        }
+    }
+}

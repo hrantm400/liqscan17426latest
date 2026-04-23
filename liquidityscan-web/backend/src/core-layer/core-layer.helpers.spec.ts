@@ -10,6 +10,7 @@ import {
     inferSePatternKind,
     isTfExpired,
     normalizeDirection,
+    pruneTemporallyIncoherent,
     shouldShowDirectionWarning,
     sortChain,
 } from './core-layer.helpers';
@@ -202,6 +203,113 @@ describe('core-layer helpers', () => {
             // path should rarely land in practice.
             expect(shouldShowDirectionWarning('SE', 'BUY', doji)).toBe(false);
             expect(shouldShowDirectionWarning('SE', 'SELL', doji)).toBe(false);
+        });
+    });
+
+    describe('pruneTemporallyIncoherent (§4 gate)', () => {
+        // Monday 2026-04-13 00:00 UTC — weekly candle open for the Apr 13–20 week.
+        const W_APR_13 = 1776038400000;
+        const W_APR_06 = W_APR_13 - TF_CANDLE_MS.W; // stale W from 2 weeks prior
+        const D_APR_21 = W_APR_13 + 8 * TF_CANDLE_MS['1D']; // Apr 21 (Tue after W closed)
+        const D_APR_14 = W_APR_13 + TF_CANDLE_MS['1D']; // Apr 14 (inside W candle)
+        const H_APR_14_12 = W_APR_13 + TF_CANDLE_MS['1D'] + 12 * TF_CANDLE_MS['1H'];
+        const FOUR_H_APR_21 = W_APR_13 + 8 * TF_CANDLE_MS['1D']; // Apr 21 08:00
+
+        function buildBucket(closes: Partial<Record<Tf, number>>) {
+            return {
+                tfs: new Set<Tf>(Object.keys(closes) as Tf[]),
+                tfLastCandleClose: { ...closes },
+                sePerTf: {} as Partial<Record<Tf, ReturnType<typeof inferSePatternKind>>>,
+            };
+        }
+
+        it('keeps a fully-coherent chain intact (MEWUSDT-like: W Apr13 + 1D Apr21)', () => {
+            const bucket = buildBucket({ W: W_APR_13, '1D': D_APR_21 });
+            pruneTemporallyIncoherent(bucket);
+            expect(Array.from(bucket.tfs).sort()).toEqual(['1D', 'W']);
+            expect(bucket.tfLastCandleClose.W).toBe(W_APR_13);
+            expect(bucket.tfLastCandleClose['1D']).toBe(D_APR_21);
+        });
+
+        it('drops stale HTF (PTBUSDT-like: W Apr06 + 1D Apr21 + 4H Apr21 → {1D,4H})', () => {
+            const bucket = buildBucket({
+                W: W_APR_06,
+                '1D': D_APR_21,
+                '4H': FOUR_H_APR_21,
+            });
+            pruneTemporallyIncoherent(bucket);
+            expect(Array.from(bucket.tfs).sort()).toEqual(['1D', '4H']);
+            expect(bucket.tfLastCandleClose.W).toBeUndefined();
+            expect(bucket.tfLastCandleClose['1D']).toBe(D_APR_21);
+            expect(bucket.tfLastCandleClose['4H']).toBe(FOUR_H_APR_21);
+        });
+
+        it('drops LTF that fired before HTF (stale LTF from prior era)', () => {
+            const bucket = buildBucket({
+                W: W_APR_13,
+                '1D': W_APR_13 - TF_CANDLE_MS['1D'], // Apr 12 — before W candle opened
+            });
+            pruneTemporallyIncoherent(bucket);
+            expect(Array.from(bucket.tfs)).toEqual(['W']);
+            expect(bucket.tfLastCandleClose['1D']).toBeUndefined();
+        });
+
+        it('accepts LTF inside HTF candle (same-era confirmation)', () => {
+            const bucket = buildBucket({
+                W: W_APR_13,
+                '1D': D_APR_14,
+                '1H': H_APR_14_12,
+            });
+            pruneTemporallyIncoherent(bucket);
+            expect(Array.from(bucket.tfs).sort()).toEqual(['1D', '1H', 'W']);
+        });
+
+        it('accepts LTF exactly one HTF candle after (grace window)', () => {
+            const bucket = buildBucket({
+                W: W_APR_13,
+                '1D': W_APR_13 + TF_CANDLE_MS.W, // Apr 20 — start of next W candle
+            });
+            pruneTemporallyIncoherent(bucket);
+            expect(Array.from(bucket.tfs).sort()).toEqual(['1D', 'W']);
+        });
+
+        it('rejects LTF exactly at factor-2 boundary (2 full HTF candles out)', () => {
+            const bucket = buildBucket({
+                W: W_APR_13,
+                '1D': W_APR_13 + 2 * TF_CANDLE_MS.W, // Apr 27 — two weeks later
+            });
+            pruneTemporallyIncoherent(bucket);
+            // HTF dropped; only 1D survives — caller-side (size < 2) will discard
+            expect(Array.from(bucket.tfs)).toEqual(['1D']);
+        });
+
+        it('cascades: dropping a stale HTF can re-validate the chain among LTFs', () => {
+            // W is stale relative to 4H but not to 1D; after W drops, 1D+4H must still be coherent.
+            const bucket = buildBucket({
+                W: W_APR_06, // stale
+                '1D': D_APR_21,
+                '4H': FOUR_H_APR_21,
+                '1H': FOUR_H_APR_21 + TF_CANDLE_MS['1H'],
+            });
+            pruneTemporallyIncoherent(bucket);
+            expect(Array.from(bucket.tfs).sort()).toEqual(['1D', '1H', '4H']);
+        });
+
+        it('leaves a single-TF bucket alone (caller-side filter will discard)', () => {
+            const bucket = buildBucket({ '4H': FOUR_H_APR_21 });
+            pruneTemporallyIncoherent(bucket);
+            expect(Array.from(bucket.tfs)).toEqual(['4H']);
+        });
+
+        it('cleans up sePerTf for dropped TFs', () => {
+            const bucket = {
+                tfs: new Set<Tf>(['W', '1D']),
+                tfLastCandleClose: { W: W_APR_06, '1D': D_APR_21 } as Partial<Record<Tf, number>>,
+                sePerTf: { W: 'REV+', '1D': 'REV' } as Partial<Record<Tf, ReturnType<typeof inferSePatternKind>>>,
+            };
+            pruneTemporallyIncoherent(bucket);
+            expect(bucket.sePerTf.W).toBeUndefined();
+            expect(bucket.sePerTf['1D']).toBe('REV');
         });
     });
 });

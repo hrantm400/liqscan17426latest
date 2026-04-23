@@ -241,6 +241,100 @@ describe('CoreLayerRuntimeFlagService', () => {
         });
     });
 
+    describe('circuit breaker (§11)', () => {
+        /**
+         * Wait for the fire-and-forget setEnabled call inside
+         * maybeTripHourlyBreaker to settle. Yielding twice to the microtask
+         * queue is enough because the fake Prisma store resolves synchronously
+         * inside its async fn.
+         */
+        const flushMicrotasks = async () => {
+            await Promise.resolve();
+            await Promise.resolve();
+        };
+
+        it('auto-disables hourly flag after 3 consecutive failures', async () => {
+            const { svc, store } = makeService('true');
+            await svc.onModuleInit();
+            expect(svc.isEnabled()).toBe(true);
+
+            svc.recordTickStart();
+            svc.recordTickFailure(new Error('1'));
+            svc.recordTickStart();
+            svc.recordTickFailure(new Error('2'));
+            expect(svc.isEnabled()).toBe(true);
+
+            svc.recordTickStart();
+            svc.recordTickFailure(new Error('3'));
+            await flushMicrotasks();
+
+            expect(svc.isEnabled()).toBe(false);
+            expect(store.row?.coreLayerEnabled).toBe(false);
+        });
+
+        it('does not re-trip when already disabled (no redundant writes)', async () => {
+            const { svc, store } = makeService('true');
+            await svc.onModuleInit();
+
+            for (let i = 0; i < 3; i++) {
+                svc.recordTickStart();
+                svc.recordTickFailure(new Error(`f${i}`));
+            }
+            await flushMicrotasks();
+            const writesAfterTrip = store.upsertCalls;
+
+            // More failures after trip — breaker should not do extra writes.
+            for (let i = 0; i < 3; i++) {
+                svc.recordTickStart();
+                svc.recordTickFailure(new Error(`extra${i}`));
+            }
+            await flushMicrotasks();
+
+            expect(store.upsertCalls).toBe(writesAfterTrip);
+            expect(svc.isEnabled()).toBe(false);
+        });
+
+        it('admin setEnabled(true) clears counter and re-arms the breaker', async () => {
+            const { svc } = makeService('true');
+            await svc.onModuleInit();
+
+            for (let i = 0; i < 3; i++) {
+                svc.recordTickStart();
+                svc.recordTickFailure(new Error(`x${i}`));
+            }
+            await flushMicrotasks();
+            expect(svc.isEnabled()).toBe(false);
+
+            await svc.setEnabled(true, 'admin');
+            expect(svc.isEnabled()).toBe(true);
+            expect(svc.getStatus().consecutiveFailures).toBe(0);
+
+            // Two new failures after re-arm — still enabled
+            svc.recordTickStart();
+            svc.recordTickFailure(new Error('new-1'));
+            svc.recordTickStart();
+            svc.recordTickFailure(new Error('new-2'));
+            expect(svc.isEnabled()).toBe(true);
+        });
+
+        it('sub-hour breaker trips independently of hourly', async () => {
+            const { svc } = makeService('true', 'true');
+            await svc.onModuleInit();
+            expect(svc.isEnabled()).toBe(true);
+            expect(svc.isSubHourEnabled()).toBe(true);
+
+            for (let i = 0; i < 3; i++) {
+                svc.recordSubHourTickStart(0);
+                svc.recordSubHourTickFailure(new Error(`sh${i}`));
+            }
+            await flushMicrotasks();
+
+            expect(svc.isSubHourEnabled()).toBe(false);
+            // Hourly must remain on — the two breakers are disjoint.
+            expect(svc.isEnabled()).toBe(true);
+        });
+    });
+
     describe('getStatus', () => {
         it('returns a defensive copy of recentErrors (callers cannot mutate internal state)', async () => {
             const { svc } = makeService('true');

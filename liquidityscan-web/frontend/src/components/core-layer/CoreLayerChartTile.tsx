@@ -80,6 +80,7 @@ export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 
           signalCloseMs={signal.tfLastCandleClose[tf] ?? null}
           candleCount={candleCount}
           lifeState={state}
+          breathingPhase={phase}
         />
       </div>
 
