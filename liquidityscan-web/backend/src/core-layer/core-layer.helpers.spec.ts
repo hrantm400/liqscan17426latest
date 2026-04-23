@@ -10,6 +10,7 @@ import {
     inferSePatternKind,
     isTfExpired,
     normalizeDirection,
+    shouldShowDirectionWarning,
     sortChain,
 } from './core-layer.helpers';
 
@@ -157,6 +158,50 @@ describe('core-layer helpers', () => {
             expect(normalizeDirection(null)).toBeNull();
             expect(normalizeDirection('')).toBeNull();
             expect(normalizeDirection('NEUTRAL')).toBeNull();
+        });
+    });
+
+    describe('shouldShowDirectionWarning (variant-aware)', () => {
+        const green = { open: 1, close: 2 }; // close > open
+        const red = { open: 2, close: 1 };   // close < open
+        const doji = { open: 1, close: 1 };  // no body
+
+        it('SE BUY: green candle → no warning, red candle → warning', () => {
+            expect(shouldShowDirectionWarning('SE', 'BUY', green)).toBe(false);
+            expect(shouldShowDirectionWarning('SE', 'BUY', red)).toBe(true);
+        });
+
+        it('SE SELL: red candle → no warning, green candle → warning', () => {
+            expect(shouldShowDirectionWarning('SE', 'SELL', red)).toBe(false);
+            expect(shouldShowDirectionWarning('SE', 'SELL', green)).toBe(true);
+        });
+
+        it('CRT: never warns regardless of direction/color (CRT bodies may close either way)', () => {
+            // TACUSDT 1H regression from the §6 diagnostic: green-bodied CRT SELL
+            // is a legitimate pattern (wick sweeps prior high, body closes back
+            // inside range, prev body > curr body).
+            expect(shouldShowDirectionWarning('CRT', 'SELL', green)).toBe(false);
+            expect(shouldShowDirectionWarning('CRT', 'BUY', red)).toBe(false);
+            expect(shouldShowDirectionWarning('CRT', 'SELL', red)).toBe(false);
+            expect(shouldShowDirectionWarning('CRT', 'BUY', green)).toBe(false);
+        });
+
+        it('BIAS: never warns regardless of direction/color (fires on candles[i-1] close vs prior range)', () => {
+            expect(shouldShowDirectionWarning('BIAS', 'BUY', red)).toBe(false);
+            expect(shouldShowDirectionWarning('BIAS', 'SELL', green)).toBe(false);
+            expect(shouldShowDirectionWarning('BIAS', 'BUY', green)).toBe(false);
+            expect(shouldShowDirectionWarning('BIAS', 'SELL', red)).toBe(false);
+        });
+
+        it('SE doji (close === open): no warning either way', () => {
+            // Permissive by design: the warning fires only on a strict
+            // direction contradiction (SE BUY + close<open, SE SELL +
+            // close>open). A doji is ambiguous, not contradictory, so it
+            // passes without a ⚠. Edge case — the upstream SE detector
+            // shouldn't flag a doji as an engulfing bar anyway, so this
+            // path should rarely land in practice.
+            expect(shouldShowDirectionWarning('SE', 'BUY', doji)).toBe(false);
+            expect(shouldShowDirectionWarning('SE', 'SELL', doji)).toBe(false);
         });
     });
 });
