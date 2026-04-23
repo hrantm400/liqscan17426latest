@@ -8,6 +8,7 @@ import { userApi } from '../services/userApi';
 import { useWatchlistStore } from '../store/watchlistStore';
 import { useAuthStore } from '../store/authStore';
 import { staggerContainer, listItemVariants } from '../utils/animations';
+import { PageHero } from '../components/shared/PageHero';
 import { SignalStatusBadge } from '../components/shared/SignalStatusBadge';
 import { FavoriteStar } from '../components/shared/FavoriteStar';
 import { TimeDisplay } from '../components/shared/TimeDisplay';
@@ -135,29 +136,23 @@ export const Watchlist: React.FC = () => {
             initial="initial"
             animate="animate"
         >
-            <div className="flex flex-col gap-6 px-4 pt-4 pb-2 md:px-8 md:pt-6 shrink-0">
-                <div className="flex items-center gap-2 text-xs font-medium dark:text-gray-500 light:text-slate-400 uppercase tracking-wider">
-                    <span className="dark:text-white light:text-text-dark cursor-pointer transition-colors" onClick={() => navigate('/dashboard')}>Scanner</span>
-                    <span className="material-symbols-outlined text-[10px]">chevron_right</span>
-                    <span className="text-amber-400 drop-shadow-[0_0_5px_rgba(245,158,11,0.5)] flex items-center gap-1">
-                        <span className="material-symbols-outlined text-[14px]">star</span>
-                        Watchlist
-                    </span>
-                </div>
-                
-                <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
-                    <div>
-                        <h1 className="text-xl md:text-3xl font-black tracking-tighter dark:text-white light:text-text-dark drop-shadow-lg flex items-center gap-3">
-                            My Watchlist
-                            <div className="px-3 py-1 bg-amber-500/10 border border-amber-500/20 rounded-full flex items-center justify-center text-amber-500 text-sm font-bold shadow-[0_0_15px_rgba(245,158,11,0.2)]">
-                                {favorites.length} Coins
-                            </div>
-                        </h1>
-                        <p className="text-sm dark:text-gray-400 light:text-slate-500 mt-2 max-w-lg leading-relaxed">
-                            Monitor signals strictly for your favorite symbols across all active scanning strategies to reduce market noise.
-                        </p>
-                    </div>
+            <div className="flex flex-col gap-4 px-4 pt-4 md:px-6 md:pt-6 shrink-0">
+                <PageHero
+                    eyebrow="Scanner · Watchlist"
+                    icon="star"
+                    title="My Watchlist"
+                    subtitle="Monitor signals strictly for your favorite symbols across all active scanning strategies."
+                    tone="amber"
+                    unboxed
+                    rightSlot={
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full border border-amber-400/30 bg-amber-400/10 text-amber-400 text-[11px] font-black uppercase tracking-widest shadow-[0_0_12px_-2px_rgba(251,191,36,0.5)]">
+                            <span className="material-symbols-outlined text-[14px]">favorite</span>
+                            {favorites.length} {favorites.length === 1 ? 'coin' : 'coins'}
+                        </span>
+                    }
+                />
 
+                <div className="flex flex-col md:flex-row md:items-center md:justify-end gap-3">
                     <div className="flex items-center p-1 rounded-xl border dark:bg-black/20 dark:border-white/5 light:bg-slate-100 light:border-slate-200">
                         <button 
                             onClick={() => setStatusFilter('ALL')}

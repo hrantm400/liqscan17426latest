@@ -7,6 +7,7 @@ import { useMarketCapData, CoinMarketData } from '../hooks/useMarketCapData';
 import { useTierGating } from '../hooks/useTierGating';
 import { Signal, StrategyType } from '../types';
 import { staggerContainer, listItemVariants } from '../utils/animations';
+import { PageHero } from '../components/shared/PageHero';
 
 const STRATEGY_ORDER: StrategyType[] = [
     'SUPER_ENGULFING',
@@ -145,23 +146,15 @@ export function TopMarketCoins() {
             initial="initial"
             animate="animate"
         >
-            <div className="flex flex-col gap-4 px-4 pt-4 pb-2 md:px-8 md:pt-6 shrink-0">
-                <div className="flex items-center gap-2 text-xs font-medium dark:text-gray-500 light:text-slate-400 uppercase tracking-wider">
-                    <Link to="/dashboard" className="dark:hover:text-white light:hover:text-text-dark">
-                        Scanner
-                    </Link>
-                    <span className="material-symbols-outlined text-[10px]">chevron_right</span>
-                    <span className="text-primary font-bold">Top 50 by Market Cap</span>
-                </div>
-                <div>
-                    <h1 className="text-2xl md:text-3xl font-black dark:text-white light:text-text-dark tracking-tight">
-                        Top 50 · Market cap
-                    </h1>
-                    <p className="text-sm dark:text-gray-400 light:text-slate-500 mt-1 max-w-2xl">
-                        Tap a coin to see which scanners currently have an <span className="text-primary font-semibold">ACTIVE</span>{' '}
-                        signal on that pair (Super Engulfing, Bias, RSI, CRT, 3-OB).
-                    </p>
-                </div>
+            <div className="px-4 md:px-6 pt-4 md:pt-6 shrink-0">
+                <PageHero
+                    eyebrow="Scanner · Market cap"
+                    icon="leaderboard"
+                    title="Top 50 · Market Cap"
+                    subtitle="Tap a coin to see which scanners currently have an ACTIVE signal on that pair (SE / Bias / RSI / CRT / 3-OB)."
+                    tone="primary"
+                    unboxed
+                />
             </div>
 
             <div className="flex-1 overflow-auto px-4 md:px-8 pb-8">
