@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useParams, Link, Navigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { PageHero } from '../components/shared/PageHero';
 
 export const StrategyDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -97,34 +98,32 @@ export const StrategyDetail: React.FC = () => {
       exit={{ opacity: 0 }}
     >
       {/* Header */}
-      <div className="flex flex-col gap-6 px-8 pt-8 pb-4 shrink-0">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-xs font-medium dark:text-gray-500 light:text-text-light-secondary uppercase tracking-wider">
-            <Link to="/strategies" className="dark:hover:text-white light:hover:text-text-dark cursor-pointer transition-colors">Monitor</Link>
-            <span className="material-symbols-outlined text-[10px]">chevron_right</span>
-            <Link to="/strategies" className="dark:hover:text-white light:hover:text-text-dark cursor-pointer transition-colors">My Strategies</Link>
-            <span className="material-symbols-outlined text-[10px]">chevron_right</span>
-            <span className="text-primary drop-shadow-[0_0_5px_rgba(19,236,55,0.5)]">Strategy {strategyNum}</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-black tracking-tight dark:text-white light:text-text-dark flex items-center gap-3">
-              Strategy {strategyNum}
-              <span className="px-2 py-0.5 rounded text-[10px] font-bold dark:bg-white/5 light:bg-green-50 dark:border-white/10 light:border-green-300 border dark:text-gray-400 light:text-text-light-secondary uppercase tracking-wider align-middle">
-                Live Feed
-              </span>
-            </h1>
-            <div className="flex items-center gap-3">
-              <a className="hidden md:flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-500/10 border border-blue-500/40 text-blue-500 text-xs font-bold uppercase tracking-wider shadow-[0_0_15px_rgba(59,130,246,0.15)] hover:shadow-[0_0_20px_rgba(59,130,246,0.4)] hover:bg-blue-500/20 hover:border-blue-500/60 transition-all group backdrop-blur-md mr-4" href="#">
-                <span className="material-symbols-outlined text-lg">school</span>
-                Learn About This Strategy
+      <div className="px-4 md:px-6 pt-4 md:pt-6 shrink-0">
+        <PageHero
+          eyebrow={`Monitor · Strategy ${strategyNum}`}
+          icon="bookmark_star"
+          title={`Strategy ${strategyNum}`}
+          subtitle="Live signal feed for this saved strategy."
+          tone="primary"
+          unboxed
+          rightSlot={
+            <div className="flex items-center gap-2">
+              <a
+                href="#"
+                className="hidden md:inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-sky-400/10 border border-sky-400/30 text-sky-400 text-[10px] font-black uppercase tracking-wider hover:bg-sky-400/20 transition-all"
+              >
+                <span className="material-symbols-outlined text-[16px]">school</span>
+                Learn
               </a>
-              <span className="text-xs dark:text-gray-400 light:text-slate-500 font-medium">Last updated: <span className="text-white">Just now</span></span>
-              <button className="p-2 rounded-lg bg-white/5 hover:bg-white/10 dark:text-gray-400 light:text-slate-500 hover:text-white transition-colors">
-                <span className="material-symbols-outlined text-xl">refresh</span>
+              <button
+                className="grid h-9 w-9 place-items-center rounded-lg border dark:border-white/10 light:border-slate-200 dark:bg-white/[0.04] light:bg-white dark:text-gray-300 light:text-slate-600 hover:text-primary hover:border-primary/30 transition-colors"
+                title="Refresh"
+              >
+                <span className="material-symbols-outlined text-[18px]">refresh</span>
               </button>
             </div>
-          </div>
-        </div>
+          }
+        />
       </div>
 
       {/* Main Content */}

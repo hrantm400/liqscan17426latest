@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { PageHeader } from '../components/layout/PageHeader';
+import { PageHero } from '../components/shared/PageHero';
 import { scaleInVariants } from '../utils/animations';
 
 function parseNum(raw: string): number {
@@ -72,12 +73,19 @@ export const RiskCalculator: React.FC = () => {
         />
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-8">
-        <div className="max-w-3xl mx-auto w-full flex flex-col gap-6">
-          <p className="text-sm dark:text-gray-400 light:text-text-light-secondary leading-relaxed">
-            Size a position from account balance, risk %, and entry vs stop. Estimates only — not financial advice.
-          </p>
+      <div className="px-4 md:px-6 shrink-0">
+        <PageHero
+          eyebrow="Tools · Risk"
+          icon="calculate"
+          title="Risk Calculator"
+          subtitle="Size a position from account balance, risk %, and entry vs stop. Estimates only — not financial advice."
+          tone="primary"
+          unboxed
+        />
+      </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-8 mt-4">
+        <div className="max-w-3xl mx-auto w-full flex flex-col gap-6">
           <motion.div
             variants={scaleInVariants}
             initial="initial"

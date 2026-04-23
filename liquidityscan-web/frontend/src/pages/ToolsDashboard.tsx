@@ -2,6 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { PageHeader } from '../components/layout/PageHeader';
+import { PageHero } from '../components/shared/PageHero';
 import { staggerContainer } from '../utils/animations';
 
 /**
@@ -21,12 +22,19 @@ export const ToolsDashboard: React.FC = () => {
         <PageHeader breadcrumbs={[{ label: 'Tools' }]} />
       </div>
 
-      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-8">
-        <div className="max-w-xl mx-auto w-full flex flex-col gap-6 pt-2">
-          <p className="text-sm dark:text-gray-400 light:text-text-light-secondary">
-            Planning tools and the interactive pattern lab for learning Super Engulfing setups.
-          </p>
+      <div className="px-4 md:px-6 shrink-0">
+        <PageHero
+          eyebrow="Tools"
+          icon="construction"
+          title="Tools"
+          subtitle="Planning tools and the interactive pattern lab for learning Super Engulfing setups."
+          tone="primary"
+          unboxed
+        />
+      </div>
 
+      <div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar px-4 md:px-8 pb-8 mt-4">
+        <div className="max-w-xl mx-auto w-full flex flex-col gap-5">
           <Link
             to="/risk-calculator"
             className="glass-panel block p-8 rounded-2xl border dark:border-white/10 light:border-green-200/80 hover:border-primary/50 dark:hover:bg-white/[0.04] light:hover:bg-green-50/80 transition-all duration-300 group flex flex-col gap-5 hover:shadow-[0_0_28px_rgba(19,236,55,0.12)]"

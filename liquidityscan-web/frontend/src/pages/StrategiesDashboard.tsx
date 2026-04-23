@@ -2,6 +2,7 @@ import React from 'react';
 import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { staggerContainer, scaleInVariants, listItemVariants } from '../utils/animations';
+import { PageHero } from '../components/shared/PageHero';
 
 export const StrategiesDashboard: React.FC = () => {
   return (
@@ -12,26 +13,23 @@ export const StrategiesDashboard: React.FC = () => {
       exit="exit"
       variants={staggerContainer}
     >
-      {/* Header */}
-      <div className="flex flex-col gap-6 px-4 pt-4 pb-2 md:px-8 md:pt-8 md:pb-4 shrink-0">
-        <div className="flex flex-col gap-2">
-          <div className="flex items-center gap-2 text-xs font-medium dark:text-gray-500 light:text-text-light-secondary uppercase tracking-wider">
-            <span className="dark:hover:text-white light:hover:text-text-dark cursor-pointer transition-colors">Monitor</span>
-            <span className="material-symbols-outlined text-[10px]">chevron_right</span>
-            <span className="text-primary drop-shadow-[0_0_5px_rgba(19,236,55,0.5)]">My Strategies</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <h1 className="text-3xl font-black tracking-tight dark:text-white light:text-text-dark flex items-center gap-3">
-              My Strategies
-            </h1>
-            <div className="flex items-center gap-3">
-              <span className="text-xs dark:text-gray-400 light:text-slate-500 font-medium">Last updated: <span className="dark:text-white light:text-text-dark">Just now</span></span>
-              <button className="p-2 rounded-lg dark:bg-white/5 light:bg-slate-100 dark:hover:bg-white/10 light:hover:bg-slate-200 dark:text-gray-400 light:text-slate-500 dark:hover:text-white light:hover:text-text-dark transition-colors">
-                <span className="material-symbols-outlined text-xl">refresh</span>
-              </button>
-            </div>
-          </div>
-        </div>
+      <div className="px-4 md:px-6 pt-4 md:pt-6 shrink-0">
+        <PageHero
+          eyebrow="Monitor · My Strategies"
+          icon="bookmark_star"
+          title="My Strategies"
+          subtitle="Saved & custom strategies you can monitor in one place."
+          tone="primary"
+          unboxed
+          rightSlot={
+            <button
+              className="grid h-9 w-9 place-items-center rounded-lg border dark:border-white/10 light:border-slate-200 dark:bg-white/[0.04] light:bg-white dark:text-gray-300 light:text-slate-600 dark:hover:bg-white/10 light:hover:bg-slate-100 hover:text-primary hover:border-primary/30 transition-colors"
+              title="Refresh"
+            >
+              <span className="material-symbols-outlined text-[18px]">refresh</span>
+            </button>
+          }
+        />
       </div>
 
       {/* Main Content */}
