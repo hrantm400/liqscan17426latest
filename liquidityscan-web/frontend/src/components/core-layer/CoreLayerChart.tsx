@@ -190,6 +190,7 @@ export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
       markerColor={MARKER_COLOR[lifeState]}
       loading={query.isLoading}
       className={className}
+      tf={tf}
     />
   );
 };
@@ -205,6 +206,8 @@ interface ChartBodyProps {
   markerColor: string;
   loading: boolean;
   className: string;
+  /** Drives the UTC-midnight day separator overlay. W and 1D skip the overlay entirely. */
+  tf: TF;
 }
 
 const ChartBody: React.FC<ChartBodyProps> = ({
@@ -217,11 +220,13 @@ const ChartBody: React.FC<ChartBodyProps> = ({
   markerColor,
   loading,
   className,
+  tf,
 }) => {
   const isLong = direction === 'BUY';
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
   const seriesRef = useRef<any>(null);
+  const daySepRef = useRef<SVGSVGElement | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -399,11 +404,75 @@ const ChartBody: React.FC<ChartBodyProps> = ({
     }
   }, [candles, signalIdx, formingIdx, variant, direction, markerColor]);
 
+  // UTC-midnight day-separator overlay. Sub-daily TFs (4H/1H/15m/5m) span
+  // multiple days inside the 15-bar window and need a visual anchor for "where
+  // did yesterday end and today begin" — same convention TradingView uses.
+  // W and 1D bars each represent at least a full day so separators are noise.
+  useEffect(() => {
+    const chart = chartRef.current;
+    const overlay = daySepRef.current;
+    if (!chart || !overlay) return;
+
+    const clear = () => {
+      while (overlay.firstChild) overlay.removeChild(overlay.firstChild);
+    };
+
+    if (tf === 'W' || tf === '1D' || candles.length === 0) {
+      clear();
+      return;
+    }
+
+    const DAY_MS = 86_400_000;
+    const ts = chart.timeScale();
+    const ns = 'http://www.w3.org/2000/svg';
+
+    const draw = () => {
+      clear();
+      for (const c of candles) {
+        const ms = new Date(c.openTime).getTime();
+        // Only candles whose openTime IS a UTC midnight separate days. For
+        // 4H/1H/15m/5m the day-boundary candle sits exactly on `ms % DAY === 0`.
+        if (ms % DAY_MS !== 0) continue;
+        const time = (Math.floor(ms / 1000) as unknown) as Time;
+        const x = ts.timeToCoordinate(time);
+        if (x === null) continue;
+        const line = document.createElementNS(ns, 'line');
+        line.setAttribute('x1', String(x));
+        line.setAttribute('y1', '0');
+        line.setAttribute('x2', String(x));
+        line.setAttribute('y2', '100%');
+        line.setAttribute('stroke', 'currentColor');
+        line.setAttribute('stroke-width', '0.5');
+        line.setAttribute('vector-effect', 'non-scaling-stroke');
+        overlay.appendChild(line);
+      }
+    };
+
+    draw();
+    ts.subscribeVisibleTimeRangeChange(draw);
+    return () => {
+      try {
+        ts.unsubscribeVisibleTimeRangeChange(draw);
+      } catch {
+        /* chart may already be torn down */
+      }
+    };
+  }, [candles, tf]);
+
   return (
     <div
       className={`relative w-full h-full flex-1 min-h-[160px] rounded-lg overflow-hidden dark:bg-black/20 light:bg-white/80 ${className}`}
     >
       <div ref={containerRef} className="absolute inset-0" />
+      {/* Day-separator overlay — currentColor + per-theme tints keep it themable
+          without bringing in extra CSS variables. pointer-events-none so the
+          chart's pan/zoom and crosshair still receive every event. */}
+      <svg
+        ref={daySepRef}
+        className="absolute inset-0 pointer-events-none dark:text-white/[0.12] light:text-slate-400/40"
+        preserveAspectRatio="none"
+        aria-hidden
+      />
       {loading && candles.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-8 h-8 rounded-full border-2 border-primary/20 border-t-primary/60 animate-spin" />
