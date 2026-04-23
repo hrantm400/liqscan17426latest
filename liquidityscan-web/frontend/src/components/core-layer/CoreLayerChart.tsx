@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createChart, ColorType, type Time } from 'lightweight-charts';
 import { useTheme } from '../../contexts/ThemeContext';
 import { shouldShowDirectionWarning } from '../../core-layer/helpers';
+import { findFormingCandleIdx, FORMING_CANDLE_STYLE } from '../../core-layer/chart-forming';
 import { fetchCandles, type ChartCandle } from '../../services/candles';
 import type { CoreLayerVariant, Direction, TF, TFLifeState } from '../../core-layer/types';
 
@@ -129,13 +130,14 @@ export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
     refetchOnWindowFocus: false,
   });
 
-  const { windowCandles, signalIdx } = useMemo(() => {
+  const { windowCandles, signalIdx, formingIdx } = useMemo(() => {
     const raw = query.data ?? [];
-    if (raw.length === 0) return { windowCandles: [], signalIdx: -1 };
+    if (raw.length === 0) return { windowCandles: [], signalIdx: -1, formingIdx: -1 };
+
+    const intervalMs = TF_INTERVAL_MS[tf];
 
     let sig = -1;
     if (signalCloseMs != null) {
-      const intervalMs = TF_INTERVAL_MS[tf];
       const targetOpen = signalCloseMs - intervalMs;
       const tol = intervalMs / 2;
       for (let i = 0; i < raw.length; i++) {
@@ -170,13 +172,18 @@ export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
     }
     const slice = raw.slice(start, end);
     const sigInSlice = sig >= 0 ? sig - start : -1;
-    return { windowCandles: slice, signalIdx: sigInSlice };
+    // Forming-candle detection runs against the slice the user actually sees.
+    // When breathing-2/2 or steady, the window includes 2 candles past the
+    // signal; the rightmost of those is often the still-forming candle.
+    const formingInSlice = findFormingCandleIdx(slice, intervalMs, Date.now());
+    return { windowCandles: slice, signalIdx: sigInSlice, formingIdx: formingInSlice };
   }, [query.data, signalCloseMs, tf, lifeState, breathingPhase]);
 
   return (
     <ChartBody
       candles={windowCandles}
       signalIdx={signalIdx}
+      formingIdx={formingIdx}
       isDark={isDark}
       variant={variant}
       direction={direction}
@@ -190,6 +197,8 @@ export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
 interface ChartBodyProps {
   candles: ChartCandle[];
   signalIdx: number;
+  /** Index in `candles` of the still-forming bar, or -1. Rendered with FORMING_CANDLE_STYLE. */
+  formingIdx: number;
   isDark: boolean;
   variant: CoreLayerVariant;
   direction: Direction;
@@ -201,6 +210,7 @@ interface ChartBodyProps {
 const ChartBody: React.FC<ChartBodyProps> = ({
   candles,
   signalIdx,
+  formingIdx,
   isDark,
   variant,
   direction,
@@ -331,13 +341,19 @@ const ChartBody: React.FC<ChartBodyProps> = ({
       return;
     }
 
-    const data = candles.map((c) => ({
-      time: (Math.floor(new Date(c.openTime).getTime() / 1000) as unknown) as Time,
-      open: c.open,
-      high: c.high,
-      low: c.low,
-      close: c.close,
-    }));
+    const data = candles.map((c, i) => {
+      const base = {
+        time: (Math.floor(new Date(c.openTime).getTime() / 1000) as unknown) as Time,
+        open: c.open,
+        high: c.high,
+        low: c.low,
+        close: c.close,
+      };
+      // Per-bar override for the still-forming candle. lightweight-charts v4
+      // applies the optional color/borderColor/wickColor fields on individual
+      // data points to override series defaults — perfect for a "ghost" bar.
+      return i === formingIdx ? { ...base, ...FORMING_CANDLE_STYLE } : base;
+    });
 
     try {
       series.setData(data);
@@ -381,7 +397,7 @@ const ChartBody: React.FC<ChartBodyProps> = ({
     } catch {
       /* ignore */
     }
-  }, [candles, signalIdx, variant, direction, markerColor]);
+  }, [candles, signalIdx, formingIdx, variant, direction, markerColor]);
 
   return (
     <div
