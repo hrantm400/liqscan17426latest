@@ -6,6 +6,7 @@ import { TelegramAlertsConfig } from '../components/settings/TelegramAlertsConfi
 import { TimezoneSelector } from '../components/settings/TimezoneSelector';
 import { staggerContainer, listItemVariants } from '../utils/animations';
 import { useNotificationStore } from '../store/notificationStore';
+import { PageHero } from '../components/shared/PageHero';
 
 export function Settings() {
   useTheme(); // to keep hook structure if context is needed, though we only toggle
@@ -38,33 +39,40 @@ export function Settings() {
 
   return (
     <motion.div
-      className="space-y-6"
+      className="space-y-5 p-4 md:p-6 max-w-6xl mx-auto"
       initial="initial"
       animate="animate"
       exit="exit"
       variants={staggerContainer}
     >
-      <motion.div variants={listItemVariants} className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold dark:text-white light:text-text-dark">Settings</h1>
+      <motion.div variants={listItemVariants}>
+        <PageHero
+          eyebrow="Account"
+          icon="settings"
+          title="Settings"
+          subtitle="Theme, notifications, timezone, and Telegram alerts."
+          tone="primary"
+          unboxed
+        />
       </motion.div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <motion.div variants={listItemVariants} className="glass-panel rounded-xl p-6">
-          <h2 className="text-xl font-bold dark:text-white light:text-text-dark mb-6">Appearance</h2>
-          <div className="space-y-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <motion.div variants={listItemVariants} className="glass-panel rounded-2xl p-5 md:p-6">
+          <SectionHead icon="palette" title="Appearance" />
+          <div className="space-y-4 mt-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="dark:text-white light:text-text-dark font-medium">Theme</p>
-                <p className="text-sm dark:text-gray-400 light:text-text-light-secondary">Switch between dark and light mode</p>
+                <p className="dark:text-white light:text-text-dark font-bold">Theme</p>
+                <p className="text-xs dark:text-gray-400 light:text-text-light-secondary">Switch between dark and light mode</p>
               </div>
               <ThemeToggle />
             </div>
           </div>
         </motion.div>
 
-        <motion.div variants={listItemVariants} className="glass-panel rounded-xl p-6">
-          <h2 className="text-xl font-bold dark:text-white light:text-text-dark mb-6">Notifications</h2>
-          <div className="space-y-4">
+        <motion.div variants={listItemVariants} className="glass-panel rounded-2xl p-5 md:p-6">
+          <SectionHead icon="notifications" title="Notifications" />
+          <div className="space-y-4 mt-4">
             <div className="flex items-center justify-between">
               <div>
                 <p className="dark:text-white light:text-text-dark font-medium">Email Notifications</p>
@@ -131,13 +139,13 @@ export function Settings() {
         </motion.div>
       </div>
 
-      <motion.div variants={listItemVariants} className="glass-panel rounded-xl p-6">
-        <h2 className="text-xl font-bold dark:text-white light:text-text-dark mb-6">Preferences</h2>
-        <div className="space-y-4">
+      <motion.div variants={listItemVariants} className="glass-panel rounded-2xl p-5 md:p-6">
+        <SectionHead icon="tune" title="Preferences" />
+        <div className="space-y-4 mt-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <div>
-              <p className="dark:text-white light:text-text-dark font-medium">Timezone</p>
-              <p className="text-sm dark:text-gray-400 light:text-text-light-secondary">All signal times will be displayed in this timezone</p>
+              <p className="dark:text-white light:text-text-dark font-bold">Timezone</p>
+              <p className="text-xs dark:text-gray-400 light:text-text-light-secondary">All signal times will be displayed in this timezone</p>
             </div>
             <div className="w-full sm:w-auto">
               <TimezoneSelector />
@@ -153,3 +161,12 @@ export function Settings() {
     </motion.div>
   );
 }
+
+const SectionHead: React.FC<{ icon: string; title: string }> = ({ icon, title }) => (
+  <div className="flex items-center gap-2.5 pb-3 border-b dark:border-white/5 light:border-slate-100">
+    <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary/10 border border-primary/30 text-primary">
+      <span className="material-symbols-outlined text-[16px]">{icon}</span>
+    </span>
+    <h2 className="text-sm font-black uppercase tracking-wider dark:text-white light:text-text-dark">{title}</h2>
+  </div>
+);

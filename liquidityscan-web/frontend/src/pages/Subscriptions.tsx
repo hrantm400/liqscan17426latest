@@ -3,6 +3,7 @@ import { motion } from 'framer-motion';
 import { useAuthStore } from '../store/authStore';
 import { userApi } from '../services/userApi';
 import { PaymentWidget } from '../components/PaymentWidget';
+import { PageHero } from '../components/shared/PageHero';
 
 export function Subscriptions() {
   const { user } = useAuthStore();
@@ -44,37 +45,60 @@ export function Subscriptions() {
     <motion.div
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      className="p-6 md:p-8 max-w-5xl mx-auto space-y-8"
+      className="p-4 md:p-6 max-w-5xl mx-auto space-y-5"
     >
-      {/* Header */}
-      <div className="text-center">
-        <h1 className="text-3xl md:text-4xl font-black dark:text-white light:text-text-dark mb-2">
-          {isPaid ? '🎉 You\'re Pro!' : 'Upgrade to Pro'}
-        </h1>
-        <p className="dark:text-gray-400 light:text-text-light-secondary max-w-lg mx-auto">
-          {isPaid
-            ? 'Full access unlocked. All strategies, unlimited signals, Telegram alerts.'
-            : 'Unlock 500+ pairs, all strategies, and Telegram God Mode alerts.'
-          }
-        </p>
-      </div>
+      <PageHero
+        eyebrow={isPaid ? 'Pro · Active' : 'Upgrade'}
+        icon={isPaid ? 'workspace_premium' : 'rocket_launch'}
+        title={isPaid ? "You're Pro" : 'Upgrade to Pro'}
+        subtitle={isPaid
+          ? 'Full access unlocked. All strategies, unlimited signals, Telegram alerts.'
+          : 'Unlock 500+ pairs, all strategies, and Telegram God Mode alerts.'}
+        tone={isPaid ? 'primary' : 'amber'}
+        unboxed
+      />
 
       {/* Current Status */}
       {isPaid && (
-        <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="glass-panel rounded-2xl p-6 text-center">
-          <div className="flex items-center justify-center gap-3 mb-3">
-            <span className="material-symbols-outlined text-primary text-3xl">workspace_premium</span>
-            <span className="text-2xl font-black text-primary">PRO ACTIVE</span>
+        <motion.div initial={{ scale: 0.95 }} animate={{ scale: 1 }} className="glass-panel rounded-2xl p-5 md:p-6 relative overflow-hidden">
+          <span aria-hidden className="pointer-events-none absolute -top-12 -left-12 h-40 w-40 rounded-full bg-primary/10 blur-3xl" />
+          <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <span className="grid h-12 w-12 place-items-center rounded-xl bg-primary/15 border border-primary/40 text-primary shadow-glow-md">
+                <span className="material-symbols-outlined text-[24px]">workspace_premium</span>
+              </span>
+              <div>
+                <div className="text-xs font-black uppercase tracking-[0.2em] text-primary">Plan</div>
+                <div className="text-xl font-black dark:text-white light:text-text-dark">Full Access</div>
+              </div>
+            </div>
+            {(typeof daysRemaining === 'number' || user?.subscriptionExpiresAt) && (
+              <div className="flex items-center gap-3">
+                {typeof daysRemaining === 'number' && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl border dark:bg-white/[0.03] light:bg-white/70 dark:border-white/10 light:border-green-300">
+                    <span className="material-symbols-outlined text-primary text-[18px]">schedule</span>
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-widest dark:text-gray-500 light:text-text-light-secondary leading-none">Remaining</div>
+                      <div className="mt-0.5 text-sm font-black dark:text-white light:text-text-dark leading-none">
+                        {daysRemaining} day{daysRemaining === 1 ? '' : 's'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+                {user?.subscriptionExpiresAt && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl border dark:bg-white/[0.03] light:bg-white/70 dark:border-white/10 light:border-green-300">
+                    <span className="material-symbols-outlined text-primary text-[18px]">event</span>
+                    <div>
+                      <div className="text-[10px] font-bold uppercase tracking-widest dark:text-gray-500 light:text-text-light-secondary leading-none">Expires</div>
+                      <div className="mt-0.5 text-sm font-black dark:text-white light:text-text-dark leading-none">
+                        {new Date(user.subscriptionExpiresAt as string).toLocaleDateString()}
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
-          <p className="text-sm dark:text-gray-400 light:text-gray-500">
-            Plan: <strong className="text-primary">Full Access</strong>
-            {typeof daysRemaining === 'number' && (
-              <> · <strong className="text-primary">{daysRemaining}</strong> day{daysRemaining === 1 ? '' : 's'} remaining</>
-            )}
-            {user?.subscriptionExpiresAt && (
-              <> · Expires: <strong className="dark:text-white light:text-text-dark">{new Date(user.subscriptionExpiresAt as string).toLocaleDateString()}</strong></>
-            )}
-          </p>
         </motion.div>
       )}
 
