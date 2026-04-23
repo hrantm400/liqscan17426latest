@@ -442,7 +442,8 @@ const ChartBody: React.FC<ChartBodyProps> = ({
         line.setAttribute('x2', String(x));
         line.setAttribute('y2', '100%');
         line.setAttribute('stroke', 'currentColor');
-        line.setAttribute('stroke-width', '0.5');
+        line.setAttribute('stroke-width', '1');
+        line.setAttribute('stroke-dasharray', '3 3');
         line.setAttribute('vector-effect', 'non-scaling-stroke');
         overlay.appendChild(line);
       }
@@ -463,16 +464,19 @@ const ChartBody: React.FC<ChartBodyProps> = ({
     <div
       className={`relative w-full h-full flex-1 min-h-[160px] rounded-lg overflow-hidden dark:bg-black/20 light:bg-white/80 ${className}`}
     >
-      <div ref={containerRef} className="absolute inset-0" />
-      {/* Day-separator overlay — currentColor + per-theme tints keep it themable
-          without bringing in extra CSS variables. pointer-events-none so the
-          chart's pan/zoom and crosshair still receive every event. */}
+      {/* Day-separator overlay — sits BEFORE the chart container in DOM so it
+          paints first; the chart canvas's transparent background lets the
+          dashed lines show through, while opaque candle bodies cover them
+          where they overlap (TradingView-style "behind candles" layering).
+          currentColor + per-theme tints keep it themable, pointer-events-none
+          so pan/zoom and crosshair receive every event. */}
       <svg
         ref={daySepRef}
-        className="absolute inset-0 pointer-events-none dark:text-white/[0.12] light:text-slate-400/40"
+        className="absolute inset-0 pointer-events-none dark:text-white/[0.18] light:text-slate-400/55"
         preserveAspectRatio="none"
         aria-hidden
       />
+      <div ref={containerRef} className="absolute inset-0" />
       {loading && candles.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="w-8 h-8 rounded-full border-2 border-primary/20 border-t-primary/60 animate-spin" />
