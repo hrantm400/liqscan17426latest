@@ -6,6 +6,7 @@ import {
     LIVE_SIGNAL_STATUSES,
     SePatternKind,
     STRATEGY_TYPE_TO_VARIANT,
+    TF_CANDLE_MS,
     Tf,
     VARIANT_STRATEGY_TYPE,
     normalizeTimeframe,
@@ -269,8 +270,15 @@ export class CoreLayerDetectionService {
             // Keep the MOST RECENT row per TF as the representative. Pre-existing rows
             // at the same TF (e.g. multiple SE patterns on the same candle close) collapse
             // to the one with the latest detectedAt.
+            //
+            // tfLastCandleClose stores the signal candle's CLOSE time in epoch ms. The
+            // upstream scanners (super-engulfing / crt / ict-bias) write detectedAt =
+            // candle.openTime, so we add one TF candle interval here to get the actual
+            // close time. Downstream (life-state math, frontend arrow placement on a
+            // `targetOpen = signalCloseMs - intervalMs` lookup) all rely on this being
+            // a real close time.
             const prev = bucket.tfLastCandleClose[tf];
-            const next = row.detectedAt.getTime();
+            const next = row.detectedAt.getTime() + TF_CANDLE_MS[tf];
             if (prev === undefined || next > prev) {
                 bucket.tfLastCandleClose[tf] = next;
                 if (variant === 'SE') {
