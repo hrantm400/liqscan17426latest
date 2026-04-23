@@ -202,12 +202,42 @@ export class CoreLayerLifecycleService {
         const active = await this.prisma.coreLayerSignal.findMany({
             where: { status: 'ACTIVE' },
         });
+        return this.sweepAll(active, now, 'advanceLifecycles');
+    }
 
+    /**
+     * Scoped variant of `advanceLifecycles` — sweep ACTIVE rows only for the
+     * given pair set. Used by the sub-hour dispatcher so 15m/5m TFs that
+     * expire between hourly ticks get demoted within the debounce window
+     * instead of waiting for the next top-of-hour sweep (ADR D14 — time
+     * source of truth is the scanner clock, but the scanner clock for
+     * sub-hour pairs is the dispatcher, not the hourly cron).
+     *
+     * Empty `pairs` is a no-op — matches `runDetection({ pairs: [] })`.
+     */
+    async advanceLifecyclesForPairs(
+        pairs: string[],
+        now: number,
+    ): Promise<{ demoted: number; anchorChanged: number; closed: number }> {
+        if (pairs.length === 0) {
+            return { demoted: 0, anchorChanged: 0, closed: 0 };
+        }
+        const active = await this.prisma.coreLayerSignal.findMany({
+            where: { status: 'ACTIVE', pair: { in: pairs } },
+        });
+        return this.sweepAll(active, now, `advanceLifecyclesForPairs[${pairs.length}]`);
+    }
+
+    private async sweepAll(
+        rows: CoreLayerSignal[],
+        now: number,
+        label: string,
+    ): Promise<{ demoted: number; anchorChanged: number; closed: number }> {
         let demoted = 0;
         let anchorChanged = 0;
         let closed = 0;
 
-        for (const row of active) {
+        for (const row of rows) {
             const outcome = await this.evolveOne(row, now);
             if (outcome === 'demoted') demoted++;
             else if (outcome === 'anchor_changed') anchorChanged++;
@@ -216,7 +246,7 @@ export class CoreLayerLifecycleService {
 
         if (demoted || anchorChanged || closed) {
             this.logger.log(
-                `advanceLifecycles: demoted=${demoted} anchorChanged=${anchorChanged} closed=${closed} (scanned=${active.length})`,
+                `${label}: demoted=${demoted} anchorChanged=${anchorChanged} closed=${closed} (scanned=${rows.length})`,
             );
         }
         return { demoted, anchorChanged, closed };

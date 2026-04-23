@@ -7,6 +7,7 @@ import {
 import * as Sentry from '@sentry/node';
 import { BinanceWsManager } from '../candles/binance-ws.manager';
 import { CoreLayerDetectionService } from '../core-layer/core-layer.detection.service';
+import { CoreLayerLifecycleService } from '../core-layer/core-layer.lifecycle.service';
 import { CoreLayerRuntimeFlagService } from '../core-layer/core-layer.runtime-flag.service';
 import { ScannerService } from './scanner.service';
 
@@ -64,6 +65,7 @@ export class SubHourScannerDispatcher implements OnModuleInit, OnModuleDestroy {
         private readonly ws: BinanceWsManager,
         private readonly scanner: ScannerService,
         private readonly coreLayerDetection: CoreLayerDetectionService,
+        private readonly coreLayerLifecycle: CoreLayerLifecycleService,
         private readonly runtimeFlag: CoreLayerRuntimeFlagService,
     ) {}
 
@@ -172,15 +174,28 @@ export class SubHourScannerDispatcher implements OnModuleInit, OnModuleDestroy {
                     scannerSignals += results.reduce((a, b) => a + b, 0);
                 }
 
+                const detectionNow = Date.now();
                 const detection = await this.coreLayerDetection.runDetection({
-                    now: Date.now(),
+                    now: detectionNow,
                     pairs,
                 });
+
+                // `runDetection({ pairs })` skips the time-based lifecycle
+                // sweep — that's owned by the hourly cron so pairs outside
+                // the scope still age out on schedule. For pairs INSIDE
+                // this scope we still need a sweep so sub-hour TFs
+                // (15m/5m, and any 1H/4H that happen to sit on a dirty
+                // pair) get demoted within the ~30 s debounce instead of
+                // waiting up to an hour for the next full sweep.
+                const sweep = await this.coreLayerLifecycle.advanceLifecyclesForPairs(
+                    pairs,
+                    detectionNow,
+                );
 
                 const elapsed = Date.now() - start;
                 this.runtimeFlag.recordSubHourTickSuccess(elapsed);
                 this.logger.log(
-                    `Sub-hour tick #${tickNumber} — pairs=${pairs.length} upstreamNew=${scannerSignals} cl.created=${detection.created} cl.promoted=${detection.promoted} cl.demoted=${detection.demoted} cl.closed=${detection.closed} in ${elapsed}ms`,
+                    `Sub-hour tick #${tickNumber} — pairs=${pairs.length} upstreamNew=${scannerSignals} cl.created=${detection.created} cl.promoted=${detection.promoted} cl.demoted=${detection.demoted + sweep.demoted} cl.closed=${detection.closed + sweep.closed} in ${elapsed}ms`,
                 );
             });
         } catch (err) {

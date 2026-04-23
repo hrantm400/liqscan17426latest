@@ -180,4 +180,72 @@ describe('CoreLayerLifecycleService', () => {
             expect(closeEvt!.toDepth).toBe(0);
         });
     });
+
+    describe('advanceLifecyclesForPairs (scoped sub-hour sweep)', () => {
+        it('demotes an expired LTF only on pairs inside the scope', async () => {
+            // Target pair: a 4H chain with a 15m TF that's 4 candles stale.
+            // The dispatcher only knows about pairs that just closed a sub-hour
+            // candle, so only this pair should be swept. Using FOURHOUR anchor
+            // (1H-only / sub-hour-only chains lack a valid anchor per
+            // classifyAnchor).
+            await service.upsertChain({
+                pair: 'ETHUSDT',
+                variant: 'SE',
+                direction: 'BUY',
+                chain: ['4H', '15m'],
+                tfLastCandleClose: {
+                    '4H': anchorNow,
+                    '15m': anchorNow - 4 * TF_CANDLE_MS['15m'], // dt = 4 candles, past the 3-candle threshold
+                },
+                now: anchorNow,
+            });
+            // Control pair: same stale shape but NOT in the flush scope. Must
+            // be left untouched — the hourly cron owns it.
+            await service.upsertChain({
+                pair: 'SOLUSDT',
+                variant: 'SE',
+                direction: 'BUY',
+                chain: ['4H', '15m'],
+                tfLastCandleClose: {
+                    '4H': anchorNow,
+                    '15m': anchorNow - 4 * TF_CANDLE_MS['15m'],
+                },
+                now: anchorNow,
+            });
+
+            const result = await service.advanceLifecyclesForPairs(['ETHUSDT'], anchorNow);
+            expect(result.closed).toBe(1); // ETHUSDT chain collapses below 2 TFs
+
+            const eth = prisma.coreLayerSignal.rows.find((r) => r.pair === 'ETHUSDT')!;
+            expect(eth.status).toBe('CLOSED');
+            expect(eth.closedAt).toBeInstanceOf(Date);
+
+            const sol = prisma.coreLayerSignal.rows.find((r) => r.pair === 'SOLUSDT')!;
+            expect(sol.status).toBe('ACTIVE');
+            expect(sol.chain).toEqual(['4H', '15m']);
+        });
+
+        it('is a no-op when the pairs array is empty', async () => {
+            // Even if there is an ACTIVE row that WOULD be demoted, an empty
+            // scope must not touch the DB.
+            await service.upsertChain({
+                pair: 'BTCUSDT',
+                variant: 'SE',
+                direction: 'BUY',
+                chain: ['4H', '15m'],
+                tfLastCandleClose: {
+                    '4H': anchorNow,
+                    '15m': anchorNow - 4 * TF_CANDLE_MS['15m'],
+                },
+                now: anchorNow,
+            });
+
+            const result = await service.advanceLifecyclesForPairs([], anchorNow);
+            expect(result).toEqual({ demoted: 0, anchorChanged: 0, closed: 0 });
+
+            const btc = prisma.coreLayerSignal.rows[0];
+            expect(btc.status).toBe('ACTIVE');
+            expect(btc.chain).toEqual(['4H', '15m']);
+        });
+    });
 });
