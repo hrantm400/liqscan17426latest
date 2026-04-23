@@ -1,6 +1,9 @@
-import React from 'react';
+import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import { CoreLayerChart } from './CoreLayerChart';
 import { LifeStatePill } from './LifeStatePill';
+import { TradingViewWidget } from '../TradingViewWidget';
+import { useTheme } from '../../contexts/ThemeContext';
 import { computeBreathingPhase } from '../../core-layer/helpers';
 import { MOCK_NOW } from '../../core-layer/constants';
 import type { CoreLayerSignal, TF, TFLifeState } from '../../core-layer/types';
@@ -9,7 +12,7 @@ interface Props {
   signal: CoreLayerSignal;
   tf: TF;
   /**
-   * Max number of real candles fetched and rendered. Default 40 matches
+   * Max number of real candles fetched and rendered. Default 30 matches
    * the monitor-page mini charts.
    */
   candleCount?: number;
@@ -23,23 +26,23 @@ interface Props {
 }
 
 /**
- * One tile of the pair-detail responsive grid — a per-TF chart surrounded by a
- * header (TF name · life pill · pattern kind · time ago) and a footer (candle
- * count · "Open in TradingView ↗"). Border color is derived from the TF's
- * life state and breathing sub-phase:
+ * One tile of the pair-detail responsive grid — a per-TF chart surrounded by
+ * a header (TF name · life pill · pattern kind · TV-toggle · time ago) and a
+ * footer (drag/scroll hint · "Open in TradingView ↗"). Border color is
+ * derived from the TF's life state and breathing sub-phase.
  *
- *   - fresh               → green border  (primary/70)
- *   - breathing phase 1/2 → yellow-amber (amber-400/70)
- *   - breathing phase 2/2 → darker amber (amber-700/70)
- *   - steady              → default hairline (matches existing cards)
- *
- * The chart body itself is `CoreLayerChart`, which fetches real OHLCV
- * from `GET /candles/:symbol/:interval` and renders a mini-candlestick
- * matching the scanner monitors' visual language. The signal candle
- * (the one whose close matches `signal.tfLastCandleClose[tf]`) is
- * highlighted so the viewer can see where the alignment fired.
+ * The chart body has two modes, toggled per-tile by the header button:
+ *   - Native (default): `CoreLayerChart` — lightweight-charts mini with the
+ *     signal candle highlighted (matches scanner monitors' visual language).
+ *   - TradingView: full TV iframe widget for the same symbol + TF. No signal
+ *     marker (TV is its own world), but full TV toolbar / studies available.
  */
-export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 30, now = MOCK_NOW }) => {
+export const CoreLayerChartTile: React.FC<Props> = ({
+  signal,
+  tf,
+  candleCount = 30,
+  now = MOCK_NOW,
+}) => {
   const state: TFLifeState = signal.tfLifeState[tf] ?? 'steady';
   const tfClose = signal.tfLastCandleClose[tf] ?? now;
   const phase = computeBreathingPhase(tf, tfClose, now);
@@ -48,6 +51,10 @@ export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 
   const showPill = state === 'fresh' || state === 'breathing';
 
   const tfBadgeClass = tfBadge(state, phase);
+
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+  const [showTradingView, setShowTradingView] = useState(false);
 
   return (
     <div
@@ -70,29 +77,75 @@ export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 
             </span>
           )}
         </div>
-        <span className="inline-flex items-center gap-1 text-[10px] font-mono dark:text-gray-500 light:text-slate-400 whitespace-nowrap">
-          <span className="material-symbols-outlined text-[12px]">schedule</span>
-          {timeAgo}
-        </span>
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Source toggle — Native (lightweight-charts) ↔ TradingView iframe.
+              Mirrors the InteractiveLiveChart toolbar button used by the
+              SignalDetails page so the affordance is familiar to users who
+              already know the scanner monitors. */}
+          <motion.button
+            type="button"
+            whileHover={{ scale: 1.08 }}
+            whileTap={{ scale: 0.92 }}
+            onClick={() => setShowTradingView((s) => !s)}
+            aria-pressed={showTradingView}
+            title={showTradingView ? 'Switch to native chart' : 'Switch to TradingView'}
+            className={`inline-flex items-center justify-center p-1 rounded-md transition-all duration-200 border ${
+              showTradingView
+                ? 'bg-primary/15 text-primary border-primary/40 shadow-[0_0_8px_-2px_rgba(19,236,55,0.45)]'
+                : 'dark:bg-white/[0.04] light:bg-slate-50 dark:border-white/10 light:border-slate-200 dark:text-gray-300 light:text-slate-600 hover:text-primary hover:border-primary/30'
+            }`}
+          >
+            {showTradingView ? (
+              <span className="material-symbols-outlined text-[14px]">candlestick_chart</span>
+            ) : (
+              <svg
+                className="w-[14px] h-[14px]"
+                viewBox="0 0 42 29"
+                fill="currentColor"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden
+              >
+                <path d="M12.981 0L19.227 8H6.73501L12.981 0Z" />
+                <path d="M21.246 0L39.981 24H2.511L21.246 0Z" />
+                <path opacity="0.6" d="M37.746 19L41.981 29H13.491L17.726 19H37.746Z" />
+              </svg>
+            )}
+          </motion.button>
+          <span className="inline-flex items-center gap-1 text-[10px] font-mono dark:text-gray-500 light:text-slate-400 whitespace-nowrap">
+            <span className="material-symbols-outlined text-[12px]">schedule</span>
+            {timeAgo}
+          </span>
+        </div>
       </header>
 
-      <div className="flex-1 min-h-0 relative">
-        <CoreLayerChart
-          pair={signal.pair}
-          tf={tf}
-          direction={signal.direction}
-          variant={signal.variant}
-          signalCloseMs={signal.tfLastCandleClose[tf] ?? null}
-          candleCount={candleCount}
-          lifeState={state}
-          breathingPhase={phase}
-        />
+      <div className="flex-1 min-h-0 relative rounded-lg overflow-hidden">
+        {showTradingView ? (
+          <TradingViewWidget
+            symbol={`BINANCE:${signal.pair}`}
+            interval={tvInterval(tf)}
+            theme={isDark ? 'dark' : 'light'}
+            height="100%"
+          />
+        ) : (
+          <CoreLayerChart
+            pair={signal.pair}
+            tf={tf}
+            direction={signal.direction}
+            variant={signal.variant}
+            signalCloseMs={signal.tfLastCandleClose[tf] ?? null}
+            candleCount={candleCount}
+            lifeState={state}
+            breathingPhase={phase}
+          />
+        )}
       </div>
 
       <footer className="flex items-center justify-between gap-2 text-[10px] font-mono shrink-0">
         <span className="inline-flex items-center gap-1 dark:text-gray-500 light:text-slate-400">
-          <span className="material-symbols-outlined text-[12px]">drag_indicator</span>
-          drag / scroll
+          <span className="material-symbols-outlined text-[12px]">
+            {showTradingView ? 'public' : 'drag_indicator'}
+          </span>
+          {showTradingView ? 'TradingView · live' : 'drag / scroll'}
         </span>
         <a
           href={tvUrl(signal.pair, tf)}
@@ -100,7 +153,7 @@ export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 font-bold dark:text-gray-300 light:text-slate-600 hover:text-primary transition-colors"
         >
-          TradingView
+          Open in TradingView
           <span className="material-symbols-outlined text-[12px] transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">
             north_east
           </span>
