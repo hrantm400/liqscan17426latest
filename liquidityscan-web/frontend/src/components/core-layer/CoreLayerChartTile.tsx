@@ -121,7 +121,7 @@ export const CoreLayerChartTile: React.FC<Props> = ({
       <div className="flex-1 min-h-0 relative rounded-lg overflow-hidden">
         {showTradingView ? (
           <TradingViewWidget
-            symbol={`BINANCE:${signal.pair}`}
+            symbol={signal.pair}
             interval={tvInterval(tf)}
             theme={isDark ? 'dark' : 'light'}
             height="100%"
