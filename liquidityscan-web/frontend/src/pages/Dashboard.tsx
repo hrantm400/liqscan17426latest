@@ -8,6 +8,7 @@ import { motion } from 'framer-motion';
 import { Timeframe } from '../types';
 import { AnimatedNumber } from '../components/animations/AnimatedNumber';
 import { NotificationBell } from '../components/shared/NotificationBell';
+import { useCoreLayerStats } from '../hooks/useCoreLayer';
 
 interface StrategySummary {
   total: number;
@@ -27,6 +28,12 @@ const STRATEGY_TIMEFRAMES = {
 export const Dashboard: React.FC = () => {
   const { volumeMap } = useVolumeData();
   const [expandedAccordions, setExpandedAccordions] = useState<Set<string>>(new Set());
+  const coreLayerStatsQuery = useCoreLayerStats();
+  const coreLayerEnabled = coreLayerStatsQuery.data?.enabled ?? false;
+  const coreLayerByVariant = coreLayerEnabled && coreLayerStatsQuery.data?.enabled
+    ? coreLayerStatsQuery.data.byVariant
+    : { SE: 0, CRT: 0, BIAS: 0 };
+  const coreLayerTotal = coreLayerByVariant.SE + coreLayerByVariant.CRT + coreLayerByVariant.BIAS;
   // Initialize with only relevant timeframes for each strategy
   // Utilizing run-time memoization for performance instead of state sync
 
@@ -240,6 +247,123 @@ export const Dashboard: React.FC = () => {
             variants={staggerContainer}
             className="flex flex-col gap-4 relative isolate mb-16"
           >
+            {/* Core-Layer — alignment across timeframes (top spot) */}
+            <motion.div
+              variants={listItemVariants}
+              whileHover={{ scale: 1.005 }}
+              className="glass-panel rounded-2xl relative z-40 overflow-hidden group/card"
+            >
+              {/* ambient glow */}
+              <span
+                aria-hidden
+                className="pointer-events-none absolute -top-24 -right-16 h-64 w-64 rounded-full bg-primary/15 blur-3xl"
+              />
+              <div
+                className={`relative p-4 md:p-6 flex items-center justify-between cursor-pointer transition-all ${isExpanded('coreLayer-content') ? 'accordion-header-expanded' : ''}`}
+                onClick={(e) => {
+                  if (!(e.target as HTMLElement).closest('a')) {
+                    toggleAccordion('coreLayer-content');
+                  }
+                }}
+              >
+                <Link to="/core-layer" className="flex items-center gap-4 group min-w-0">
+                  <div className="w-10 h-10 md:w-14 md:h-14 rounded-2xl bg-primary/10 border border-primary/30 flex items-center justify-center text-primary shadow-glow-sm group-hover:shadow-glow-md group-hover:bg-primary/15 transition-all duration-300 shrink-0">
+                    <span className="material-symbols-outlined text-3xl group-hover:scale-110 transition-transform">hub</span>
+                  </div>
+                  <div className="flex flex-col min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg md:text-2xl font-bold dark:text-white light:text-text-dark group-hover:text-primary transition-colors tracking-tight truncate">
+                        Core-Layer
+                      </h3>
+                      <span className="text-[9px] font-black uppercase tracking-[0.18em] px-1.5 py-0.5 rounded leading-none bg-primary/10 text-primary border border-primary/30">
+                        New
+                      </span>
+                    </div>
+                    <span className="text-xs dark:text-gray-400 light:text-text-light-secondary tracking-widest font-mono uppercase opacity-70 truncate">
+                      Strategy F-00 • Cross-Timeframe Alignment
+                    </span>
+                  </div>
+                </Link>
+                <div className="flex items-center gap-4 shrink-0">
+                  <span className="px-3 py-1 rounded-full bg-primary/10 text-primary text-[11px] font-bold border border-primary/30 animate-pulse shadow-glow">
+                    <AnimatedNumber value={coreLayerTotal} /> SIGNALS ACTIVE
+                  </span>
+                  <button
+                    className="toggle-button w-8 h-8 flex items-center justify-center rounded-full dark:hover:bg-white/10 light:hover:bg-slate-200 transition-all"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleAccordion('coreLayer-content');
+                    }}
+                  >
+                    <span className={`material-symbols-outlined text-xl transition-transform duration-300 ${isExpanded('coreLayer-content') ? 'rotate-180 text-primary' : 'dark:text-gray-500 light:text-slate-500'}`}>
+                      expand_more
+                    </span>
+                  </button>
+                </div>
+              </div>
+              <div
+                className={`accordion-content ${isExpanded('coreLayer-content') ? 'expanded' : ''}`}
+                id="coreLayer-content"
+              >
+                <div className="p-4 md:p-6 flex flex-col gap-3">
+                  {([
+                    { slug: 'se', label: 'SE', subtitle: 'SuperEngulfing alignment', count: coreLayerByVariant.SE, accent: '#13ec37' },
+                    { slug: 'crt', label: 'CRT', subtitle: 'Candle Range Trigger alignment', count: coreLayerByVariant.CRT, accent: '#22d3ee' },
+                    { slug: 'bias', label: 'BIAS', subtitle: 'Bias-flip alignment', count: coreLayerByVariant.BIAS, accent: '#a78bfa' },
+                  ]).map((v) => (
+                    <Link
+                      key={v.slug}
+                      to={`/core-layer/${v.slug}`}
+                      className="w-full flex justify-between items-center p-3 md:p-4 rounded-xl border dark:border-white/5 light:border-green-300 dark:bg-white/[0.01] hover:dark:bg-white/[0.04] transition-all cursor-pointer group/item relative overflow-hidden"
+                      style={{ ['--row-accent' as string]: v.accent }}
+                    >
+                      <div
+                        aria-hidden
+                        className="absolute inset-0 opacity-0 group-hover/item:opacity-100 transition-opacity"
+                        style={{ background: `linear-gradient(to right, ${v.accent}10, transparent)` }}
+                      />
+                      <div className="flex items-center gap-4 relative z-10 min-w-0">
+                        <span
+                          className="w-12 h-8 flex items-center justify-center rounded-md text-xs font-black border font-mono shrink-0 transition-all"
+                          style={{
+                            color: v.accent,
+                            borderColor: `${v.accent}55`,
+                            backgroundColor: `${v.accent}1a`,
+                          }}
+                        >
+                          {v.label}
+                        </span>
+                        <div className="flex flex-col min-w-0">
+                          <span className="text-sm font-medium dark:text-gray-300 light:text-slate-600 truncate">
+                            {v.subtitle}
+                          </span>
+                          <span className="text-[10px] dark:text-gray-500 light:text-slate-500 font-mono">
+                            Open scanner →
+                          </span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 relative z-10 shrink-0">
+                        <span
+                          className={`font-mono font-black text-lg tabular-nums ${
+                            v.count > 0 ? '' : 'dark:text-gray-600 light:text-slate-400'
+                          }`}
+                          style={v.count > 0 ? { color: v.accent } : undefined}
+                        >
+                          <AnimatedNumber value={v.count} />
+                        </span>
+                        <span
+                          className="material-symbols-outlined text-sm dark:text-gray-600 mr-2 group-hover/item:translate-x-1 transition-transform"
+                          style={{ color: v.accent }}
+                        >
+                          arrow_forward
+                        </span>
+                      </div>
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            </motion.div>
+
             {/* SuperEngulfing */}
             <motion.div
               variants={listItemVariants}

@@ -48,14 +48,23 @@ export const DepthGrid: React.FC<DepthGridProps> = ({
     return map;
   }, [signals]);
 
+  // Used to render the depth column "fill bar" — proportional to how
+  // populated this column is relative to the busiest depth.
+  const maxColumnSize = React.useMemo(() => {
+    let m = 0;
+    for (const list of grouped.values()) if (list.length > m) m = list.length;
+    return m;
+  }, [grouped]);
+
   return (
     <>
       <div
-        className={`flex md:grid md:grid-cols-4 gap-4 overflow-x-auto snap-x snap-mandatory md:overflow-visible pb-2 ${className}`}
+        className={`flex md:grid md:grid-cols-4 gap-3 md:gap-4 overflow-x-auto snap-x snap-mandatory md:overflow-visible no-scrollbar pb-2 ${className}`}
       >
         {DEPTH_COLUMNS.map((col) => {
           const list = grouped.get(col.depth) ?? [];
           const locked = col.isProOnly && tier !== 'pro';
+          const fillPct = maxColumnSize === 0 ? 0 : (list.length / maxColumnSize) * 100;
 
           return (
             <section
@@ -63,54 +72,82 @@ export const DepthGrid: React.FC<DepthGridProps> = ({
               className="shrink-0 w-[85vw] md:w-auto snap-start flex flex-col gap-3"
               aria-label={`${col.label} column${locked ? ', Pro only' : ''}`}
             >
-              <header className="flex items-center justify-between px-1">
-                <h3 className="text-sm font-black dark:text-white light:text-slate-900 tracking-wide flex items-center gap-1.5">
-                  {col.label}
-                  {locked && (
+              {/* polished column header */}
+              <header className="rounded-xl border dark:border-white/10 light:border-slate-200 dark:bg-white/[0.02] light:bg-white/70 backdrop-blur-sm p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
                     <span
-                      className="material-symbols-outlined text-amber-400 text-[14px]"
-                      aria-hidden="true"
+                      className={`grid h-7 w-7 place-items-center rounded-lg border shrink-0 ${
+                        locked
+                          ? 'bg-amber-400/10 border-amber-400/30 text-amber-400'
+                          : 'bg-primary/10 border-primary/30 text-primary'
+                      }`}
                     >
-                      lock
+                      <span className="material-symbols-outlined text-[14px]">
+                        {locked ? 'lock' : 'layers'}
+                      </span>
                     </span>
-                  )}
-                </h3>
-                <span className="text-[10px] font-mono font-bold dark:text-gray-500 light:text-slate-400 uppercase tracking-wider">
-                  {locked
-                    ? 'Pro'
-                    : `${list.length} signal${list.length === 1 ? '' : 's'}`}
-                </span>
+                    <h3 className="text-sm font-black dark:text-white light:text-slate-900 tracking-wide truncate">
+                      {col.label}
+                    </h3>
+                  </div>
+                  <span
+                    className={`text-[10px] font-mono font-black tabular-nums px-2 py-0.5 rounded border leading-none ${
+                      locked
+                        ? 'bg-amber-400/10 text-amber-400 border-amber-400/30'
+                        : list.length > 0
+                          ? 'bg-primary/10 text-primary border-primary/30'
+                          : 'dark:bg-white/[0.04] light:bg-slate-100 dark:text-gray-500 light:text-slate-400 dark:border-white/10 light:border-slate-200'
+                    }`}
+                  >
+                    {locked ? 'PRO' : list.length}
+                  </span>
+                </div>
+                <p className="mt-1.5 text-[10px] dark:text-gray-500 light:text-slate-400 leading-snug">
+                  {col.blurb}
+                </p>
+                {/* fill bar */}
+                <div className="mt-2 h-1 w-full overflow-hidden rounded-full dark:bg-white/[0.05] light:bg-slate-100">
+                  <div
+                    className={`h-full transition-all duration-500 ${
+                      locked ? 'bg-amber-400/70' : 'bg-primary/70'
+                    }`}
+                    style={{ width: `${fillPct}%` }}
+                  />
+                </div>
               </header>
-              <p className="px-1 text-[10px] dark:text-gray-500 light:text-slate-400">
-                {col.blurb}
-              </p>
-              <div className="flex flex-col gap-3">
+
+              <div className="flex flex-col gap-2.5">
                 {locked ? (
                   <button
                     type="button"
                     onClick={() => setUpgradeOpen(true)}
-                    className="group rounded-xl border border-dashed border-amber-500/40 bg-amber-500/5 p-4 text-left transition-all hover:bg-amber-500/10 hover:border-amber-500/60 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
+                    className="group relative overflow-hidden rounded-xl border border-dashed border-amber-500/40 bg-amber-500/5 p-4 text-left transition-all hover:bg-amber-500/10 hover:border-amber-500/60 focus:outline-none focus:ring-2 focus:ring-amber-500/40"
                     aria-label="5-deep alignments are Pro-only. Upgrade to unlock."
                   >
-                    <div className="flex items-center gap-2 mb-2">
+                    <span
+                      aria-hidden
+                      className="pointer-events-none absolute -top-12 -right-12 h-32 w-32 rounded-full bg-amber-400/20 blur-2xl"
+                    />
+                    <div className="relative flex items-center gap-2 mb-2">
                       <span
-                        className="material-symbols-outlined text-amber-400 text-[18px]"
+                        className="grid h-7 w-7 place-items-center rounded-lg bg-amber-400/15 border border-amber-400/40 text-amber-400"
                         aria-hidden="true"
                       >
-                        lock
+                        <span className="material-symbols-outlined text-[16px]">workspace_premium</span>
                       </span>
                       <span className="text-xs font-black tracking-[0.18em] uppercase text-amber-400">
                         Pro-only
                       </span>
                     </div>
-                    <p className="text-xs dark:text-gray-300 light:text-slate-600 leading-relaxed">
+                    <p className="relative text-xs dark:text-gray-300 light:text-slate-600 leading-relaxed">
                       5-deep chains always include a 15m or 5m sub-hour leaf.
                       Upgrade to Pro to see them live.
                     </p>
-                    <span className="mt-3 inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-amber-400 group-hover:underline">
+                    <span className="relative mt-3 inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-widest text-amber-400">
                       Unlock
                       <span
-                        className="material-symbols-outlined text-[14px]"
+                        className="material-symbols-outlined text-[14px] transition-transform group-hover:translate-x-0.5"
                         aria-hidden="true"
                       >
                         arrow_forward
@@ -118,8 +155,13 @@ export const DepthGrid: React.FC<DepthGridProps> = ({
                     </span>
                   </button>
                 ) : list.length === 0 ? (
-                  <div className="rounded-xl border border-dashed dark:border-white/10 light:border-slate-200 p-4 text-xs dark:text-gray-500 light:text-slate-400 text-center">
-                    No {col.label} alignments right now.
+                  <div className="rounded-xl border border-dashed dark:border-white/10 light:border-slate-200 p-5 flex flex-col items-center gap-1.5 text-center">
+                    <span className="material-symbols-outlined text-[18px] dark:text-gray-600 light:text-slate-400">
+                      hourglass_empty
+                    </span>
+                    <p className="text-[11px] dark:text-gray-500 light:text-slate-400">
+                      No {col.label} alignments
+                    </p>
                   </div>
                 ) : (
                   list.map((s) => (

@@ -64,17 +64,26 @@ export const IntroVideoPill: React.FC<IntroVideoPillProps> = ({ pageKey }) => {
         onClick={handleOpen}
         aria-label={`Play Core-Layer ${pageKey} intro video`}
         className={[
-          'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full',
-          'text-[11px] font-bold tracking-wide border transition-all',
+          'group relative inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full',
+          'text-[11px] font-black tracking-widest uppercase border transition-all',
           seen
-            ? 'dark:border-white/10 light:border-slate-200 dark:text-gray-400 light:text-slate-500 dark:bg-white/5 light:bg-slate-50 opacity-80 hover:opacity-100'
-            : 'border-primary/40 text-primary bg-primary/10 ring-2 ring-primary/20 animate-pulse hover:animate-none hover:ring-primary/40',
+            ? 'dark:border-white/10 light:border-slate-200 dark:text-gray-400 light:text-slate-500 dark:bg-white/5 light:bg-slate-50 opacity-70 hover:opacity-100 hover:border-primary/30 hover:text-primary'
+            : 'border-primary/40 text-primary bg-primary/10 shadow-[0_0_12px_-2px_rgba(19,236,55,0.45)] hover:bg-primary/15',
         ].join(' ')}
       >
-        <span className="material-symbols-outlined text-[14px] leading-none">
+        {/* unseen → ping ring around play icon */}
+        {!seen && (
+          <span
+            aria-hidden
+            className="absolute -left-px -top-px h-full grid place-items-center pl-2"
+          >
+            <span className="absolute inline-flex h-3.5 w-3.5 rounded-full bg-primary/50 opacity-50 animate-ping" />
+          </span>
+        )}
+        <span className="relative material-symbols-outlined text-[14px] leading-none transition-transform group-hover:scale-110">
           play_circle
         </span>
-        <span className="hidden md:inline">{label}</span>
+        <span className="relative hidden md:inline">{label}</span>
       </button>
 
       <IntroVideoModal

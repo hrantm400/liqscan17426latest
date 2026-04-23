@@ -115,59 +115,111 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 10 }}
             transition={{ duration: 0.2, ease: 'easeOut' }}
-            className="relative w-full max-w-lg dark:bg-[#0a140d]/95 light:bg-white/95 rounded-2xl border dark:border-primary/30 light:border-primary/40 shadow-[0_0_60px_rgba(19,236,55,0.15)] overflow-hidden"
+            className="relative w-full max-w-lg dark:bg-[#0a140d]/95 light:bg-white/95 rounded-2xl border dark:border-primary/30 light:border-primary/40 shadow-[0_0_60px_rgba(19,236,55,0.22)] overflow-hidden"
           >
-            <div className="p-6 space-y-5">
-              <div className="flex items-start justify-between gap-4">
-                <span className="text-[10px] font-black tracking-[0.2em] uppercase text-primary">
-                  Pro-only signal
-                </span>
-                {!blocking && (
-                  <button
-                    type="button"
-                    onClick={onClose}
-                    className="p-1 rounded-md dark:text-gray-400 light:text-slate-500 dark:hover:bg-white/5 light:hover:bg-slate-100 transition-colors"
-                    aria-label="Close"
-                  >
-                    <span className="material-symbols-outlined text-lg">close</span>
-                  </button>
-                )}
-              </div>
-
-              <h2 className="text-xl font-black dark:text-white light:text-slate-900 tracking-tight">
-                {pair ? `${pair} has a Pro-tier alignment` : 'Unlock Core-Layer Pro'}
-              </h2>
-
-              {pair && (
-                <div className="rounded-xl border dark:border-white/10 light:border-slate-200 dark:bg-white/5 light:bg-slate-50 p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs dark:text-gray-400 light:text-slate-500 font-mono">
-                      {direction ?? ''} · {depth ? `${depth}-deep` : ''}
+            {/* cinematic gradient header */}
+            <div className="relative overflow-hidden">
+              <div
+                aria-hidden
+                className="pointer-events-none absolute inset-0 dark:bg-cinematic-gradient light:bg-cinematic-gradient-light opacity-90"
+              />
+              <div aria-hidden className="pointer-events-none absolute inset-0 bg-grid-pattern opacity-40" />
+              <span
+                aria-hidden
+                className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full bg-primary/25 blur-3xl"
+              />
+              <div className="relative px-6 pt-6 pb-5">
+                <div className="flex items-start justify-between gap-4">
+                  <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full border border-primary/30 bg-primary/10">
+                    <span className="material-symbols-outlined text-primary text-[16px] drop-shadow-[0_0_6px_rgba(19,236,55,0.5)]">
+                      workspace_premium
                     </span>
-                    {visibleChain && (
-                      <span className="text-xs font-bold dark:text-white light:text-slate-700 tracking-wider">
-                        {visibleChain}
-                        {hiddenTfsCount ? (
-                          <span className="ml-1 text-amber-400">
-                            🔒 +{hiddenTfsCount} Pro TF{hiddenTfsCount > 1 ? 's' : ''}
-                          </span>
-                        ) : null}
+                    <span className="text-[10px] font-black tracking-[0.2em] uppercase text-primary">
+                      Pro-only signal
+                    </span>
+                  </div>
+                  {!blocking && (
+                    <button
+                      type="button"
+                      onClick={onClose}
+                      className="p-1 rounded-md dark:text-gray-400 light:text-slate-500 dark:hover:bg-white/10 light:hover:bg-slate-100 transition-colors"
+                      aria-label="Close"
+                    >
+                      <span className="material-symbols-outlined text-lg">close</span>
+                    </button>
+                  )}
+                </div>
+                <h2 className="mt-4 text-2xl md:text-3xl font-black dark:text-white light:text-slate-900 tracking-tight leading-tight">
+                  {pair ? (
+                    <>
+                      <span className="text-primary drop-shadow-[0_0_8px_rgba(19,236,55,0.35)]">
+                        {pair}
+                      </span>{' '}
+                      has a Pro-tier alignment
+                    </>
+                  ) : (
+                    'Unlock Core-Layer Pro'
+                  )}
+                </h2>
+                <p className="mt-2 text-sm dark:text-gray-400 light:text-slate-500 max-w-md">
+                  Upgrade to reveal sub-hour alignments, deeper chains, and instant
+                  promotion alerts.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-6 pt-0 space-y-5">
+              {pair && (
+                <div className="rounded-xl border dark:border-white/10 light:border-slate-200 dark:bg-white/[0.03] light:bg-slate-50 p-4 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <span
+                      className={`inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.18em] px-2 py-0.5 rounded-md border leading-none ${
+                        direction === 'BUY'
+                          ? 'bg-primary/10 text-primary border-primary/30'
+                          : direction === 'SELL'
+                            ? 'bg-red-500/10 text-red-400 border-red-500/30'
+                            : 'dark:bg-white/5 light:bg-slate-100 dark:text-gray-400 light:text-slate-500 dark:border-white/10 light:border-slate-200'
+                      }`}
+                    >
+                      {direction ?? '—'}
+                    </span>
+                    {depth && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-black uppercase tracking-[0.18em] px-2 py-0.5 rounded-md border bg-amber-400/10 text-amber-400 border-amber-400/30 leading-none">
+                        <span className="material-symbols-outlined text-[12px]">layers</span>
+                        {depth}-deep
                       </span>
                     )}
                   </div>
+                  {visibleChain && (
+                    <div className="flex items-center flex-wrap gap-1.5">
+                      <span className="text-[10px] font-bold uppercase tracking-widest dark:text-gray-500 light:text-slate-400">
+                        Chain
+                      </span>
+                      <span className="text-xs font-mono font-black dark:text-white light:text-slate-700 tracking-wider">
+                        {visibleChain}
+                      </span>
+                      {hiddenTfsCount ? (
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded-md px-1.5 py-0.5 leading-none">
+                          <span className="material-symbols-outlined text-[12px]">lock</span>
+                          +{hiddenTfsCount} Pro
+                        </span>
+                      ) : null}
+                    </div>
+                  )}
                   {(visibleCorrelations?.length || hiddenCorrelationsCount) && (
-                    <div className="flex flex-wrap items-center gap-1.5 text-[10px]">
+                    <div className="flex flex-wrap items-center gap-1.5">
                       {visibleCorrelations?.map((c) => (
                         <span
                           key={c}
-                          className="px-1.5 py-0.5 rounded-full border border-primary/30 text-primary bg-primary/10 font-bold"
+                          className="text-[10px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-md border border-primary/30 text-primary bg-primary/10"
                         >
                           {c}
                         </span>
                       ))}
                       {hiddenCorrelationsCount ? (
-                        <span className="px-1.5 py-0.5 rounded-full border border-amber-500/30 text-amber-400 bg-amber-500/10 font-bold">
-                          🔒 +{hiddenCorrelationsCount} hidden
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-400 bg-amber-400/10 border border-amber-400/30 rounded-md px-1.5 py-0.5">
+                          <span className="material-symbols-outlined text-[12px]">lock</span>
+                          +{hiddenCorrelationsCount} hidden
                         </span>
                       ) : null}
                     </div>
@@ -179,23 +231,26 @@ export const UpgradeModal: React.FC<UpgradeModalProps> = ({
                 {FEATURE_BULLETS.map((bullet) => (
                   <li
                     key={bullet}
-                    className="flex items-start gap-2 text-sm dark:text-gray-200 light:text-slate-700"
+                    className="flex items-start gap-2.5 text-sm dark:text-gray-200 light:text-slate-700"
                   >
-                    <span className="material-symbols-outlined text-primary text-[18px] mt-0.5 shrink-0">
-                      check_circle
+                    <span className="grid h-5 w-5 mt-0.5 place-items-center rounded-full bg-primary/15 border border-primary/30 text-primary shrink-0">
+                      <span className="material-symbols-outlined text-[14px]">check</span>
                     </span>
                     <span>{bullet}</span>
                   </li>
                 ))}
               </ul>
 
-              <div className="flex flex-col sm:flex-row gap-2 pt-2">
+              <div className="flex flex-col sm:flex-row gap-2 pt-1">
                 <button
                   type="button"
                   onClick={handleUpgrade}
-                  className="flex-1 px-4 py-3 rounded-xl bg-primary text-black text-sm font-black tracking-wide transition-all hover:shadow-[0_0_20px_rgba(19,236,55,0.4)]"
+                  className="group relative flex-1 px-4 py-3 rounded-xl bg-primary text-black text-sm font-black tracking-wide transition-all hover:shadow-[0_0_24px_rgba(19,236,55,0.5)] hover:bg-primary-hover overflow-hidden"
                 >
-                  Upgrade to Pro · $299/mo
+                  <span className="relative inline-flex items-center justify-center gap-2 w-full">
+                    <span className="material-symbols-outlined text-[18px]">rocket_launch</span>
+                    Upgrade to Pro · $299/mo
+                  </span>
                 </button>
                 {!blocking && (
                   <button

@@ -11,6 +11,7 @@ import { PatternFilter } from '../components/shared/PatternFilter';
 import { SignalBadge } from '../components/shared/SignalBadge';
 import { TimeDisplay } from '../components/shared/TimeDisplay';
 import { PageHeader } from '../components/layout/PageHeader';
+import { ScannerHero } from '../components/shared/ScannerHero';
 import { AnimatedCard } from '../components/animations/AnimatedCard';
 import { AnimatedList } from '../components/animations/AnimatedList';
 import { AnimatedNumber } from '../components/animations/AnimatedNumber';
@@ -262,6 +263,23 @@ export function MonitorSuperEngulfing() {
           { label: 'SuperEngulfing' },
         ]}
         lastUpdated="Just now"
+      />
+
+      <ScannerHero
+        slug="superengulfing"
+        eyebrow="Strategy A-01 · SuperEngulfing"
+        icon="bolt"
+        title="SuperEngulfing"
+        subtitle="Engulfing-candle reversals across 4H / 1D / 1W."
+        tone="primary"
+        kpiTotal={timeframeStats['4h'] + timeframeStats['1d'] + timeframeStats['1w']}
+        kpis={[
+          { label: '4H', value: timeframeStats['4h'], hint: 'Mid-term' },
+          { label: '1D', value: timeframeStats['1d'], hint: 'Daily' },
+          { label: '1W', value: timeframeStats['1w'], hint: 'Macro' },
+        ]}
+        linkTo="/core-layer/se"
+        linkLabel="Core-Layer SE"
       />
 
       {/* Timeframe Cards - Only show in list view */}

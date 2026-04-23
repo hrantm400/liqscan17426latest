@@ -42,11 +42,15 @@ const TABS: ReadonlyArray<{ key: TabView; label: string; icon: string }> = [
  * getMockSignalsByVariant when stats.enabled is false or the list query
  * fails — matches the rollback contract used on the overview page.
  */
+type DirectionFilter = 'all' | 'BUY' | 'SELL';
+
 export const CoreLayerVariant: React.FC = () => {
   const { variant: variantSlug } = useParams<{ variant: string }>();
   const variant = variantSlug ? VARIANT_FROM_SLUG[variantSlug] : undefined;
   const [searchParams, setSearchParams] = useSearchParams();
   const [highCorrelationOnly, setHighCorrelationOnly] = useState(false);
+  const [directionFilter, setDirectionFilter] = useState<DirectionFilter>('all');
+  const [freshOnly, setFreshOnly] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [justPromotedIds, setJustPromotedIds] = useState<Set<string>>(() => new Set());
 
@@ -94,9 +98,14 @@ export const CoreLayerVariant: React.FC = () => {
       if (activeTab === 'closed' && s.status !== 'CLOSED') return false;
       if (activeAnchor !== 'all' && s.anchor !== activeAnchor) return false;
       if (highCorrelationOnly && s.correlationPairs.length === 0) return false;
+      if (directionFilter !== 'all' && s.direction !== directionFilter) return false;
+      if (freshOnly) {
+        const hasFresh = Object.values(s.tfLifeState).some((st) => st === 'fresh');
+        if (!hasFresh) return false;
+      }
       return true;
     });
-  }, [allSignals, activeTab, activeAnchor, highCorrelationOnly]);
+  }, [allSignals, activeTab, activeAnchor, highCorrelationOnly, directionFilter, freshOnly]);
 
   const anchorCounts = useMemo(() => {
     const base: Record<AnchorType, number> = { WEEKLY: 0, DAILY: 0, FOURHOUR: 0 };
@@ -167,14 +176,13 @@ export const CoreLayerVariant: React.FC = () => {
       </PageHeader>
 
       <div className="px-4 md:px-6 flex flex-col gap-5">
-        <header className="flex flex-col gap-1">
-          <h1 className="text-2xl md:text-3xl font-black dark:text-white light:text-slate-900 tracking-tight">
-            {variantMeta.label}
-          </h1>
-          <p className="text-sm dark:text-gray-400 light:text-slate-500">
-            {variantMeta.tagline}
-          </p>
-        </header>
+        <VariantHero
+          variantMeta={variantMeta}
+          activeCount={allSignals.filter((s) => s.status === 'ACTIVE').length}
+          deepestDepth={allSignals.reduce((m, s) => (s.status === 'ACTIVE' && s.depth > m ? s.depth : m), 0)}
+          highCorrCount={allSignals.filter((s) => s.status === 'ACTIVE' && s.correlationPairs.length > 0).length}
+          enabled={enabled}
+        />
 
         <AnchorSelectorCards
           activeAnchor={activeAnchor}
@@ -182,9 +190,9 @@ export const CoreLayerVariant: React.FC = () => {
           onSelect={setAnchor}
         />
 
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="sticky top-2 z-20 flex flex-col md:flex-row md:items-center justify-between gap-3 rounded-xl border dark:border-white/10 light:border-slate-200 dark:bg-[#0d1310]/90 light:bg-white/95 backdrop-blur-md px-3 py-2 shadow-sm">
           <div
-            className="flex items-center gap-1.5 p-1 rounded-xl dark:bg-white/[0.03] light:bg-green-50/50 border dark:border-white/5 light:border-green-200"
+            className="flex items-center gap-1 p-1 rounded-lg dark:bg-black/30 light:bg-slate-100/80 border dark:border-white/5 light:border-slate-200 self-start"
             role="tablist"
             aria-label="Signal status filter"
           >
@@ -197,10 +205,10 @@ export const CoreLayerVariant: React.FC = () => {
                   role="tab"
                   aria-selected={active}
                   onClick={() => setTab(t.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-wider transition-all ${
                     active
-                      ? 'bg-primary/15 text-primary shadow-[0_0_10px_rgba(19,236,55,0.15)]'
-                      : 'dark:text-gray-400 light:text-slate-500 hover:text-primary'
+                      ? 'bg-primary/20 text-primary shadow-[0_0_10px_rgba(19,236,55,0.18)]'
+                      : 'dark:text-gray-400 light:text-slate-500 hover:text-primary hover:bg-primary/5'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[14px]">{t.icon}</span>
@@ -209,16 +217,33 @@ export const CoreLayerVariant: React.FC = () => {
               );
             })}
           </div>
-          <label className="inline-flex items-center gap-2 text-xs dark:text-gray-300 light:text-slate-600 cursor-pointer select-none">
+          <label
+            className={`inline-flex items-center gap-2 text-xs cursor-pointer select-none px-3 py-1.5 rounded-md transition-colors ${
+              highCorrelationOnly
+                ? 'bg-primary/10 text-primary border border-primary/30'
+                : 'dark:text-gray-300 light:text-slate-600 border border-transparent hover:border-primary/20'
+            }`}
+            title="Show only chains where two TFs in the chain are a known correlation pair (e.g. 1D + 1H)."
+          >
             <input
               type="checkbox"
               checked={highCorrelationOnly}
               onChange={(e) => setHighCorrelationOnly(e.target.checked)}
               className="w-4 h-4 rounded border-white/20 bg-transparent accent-primary"
             />
+            <span className="material-symbols-outlined text-[14px]">link</span>
             <span>Only high-correlation chains</span>
           </label>
         </div>
+
+        {/* quick-filter chips: direction & freshness — narrows the depth grid in one tap */}
+        <QuickFilterChips
+          directionFilter={directionFilter}
+          onDirectionChange={setDirectionFilter}
+          freshOnly={freshOnly}
+          onFreshChange={setFreshOnly}
+          totalShown={filtered.length}
+        />
 
         {isLoading ? (
           <CoreLayerState kind="loading" />
@@ -239,16 +264,31 @@ export const CoreLayerVariant: React.FC = () => {
           <DepthGrid signals={filtered} justPromotedIds={justPromotedIds} />
         )}
 
-        <p className="text-[11px] dark:text-gray-500 light:text-slate-400 text-center">
-          <button
-            type="button"
-            onClick={() => setUpgradeOpen(true)}
-            className="underline decoration-dotted underline-offset-2 hover:text-primary transition-colors"
-          >
-            Sub-1h TFs are Pro
-          </button>{' '}
-          — 15m and 5m alignments unlock richer correlation badges and deeper chains.
-        </p>
+        <button
+          type="button"
+          onClick={() => setUpgradeOpen(true)}
+          className="group flex items-center justify-between gap-3 rounded-xl border dark:border-amber-400/20 light:border-amber-300/60 dark:bg-amber-500/[0.06] light:bg-amber-50/70 px-4 py-3 transition-colors hover:border-amber-400/50 hover:bg-amber-500/[0.1]"
+        >
+          <div className="flex items-center gap-3 min-w-0 text-left">
+            <span className="material-symbols-outlined text-amber-400 text-[20px] shrink-0">
+              workspace_premium
+            </span>
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs font-black uppercase tracking-wider text-amber-400">
+                Sub-1h TFs are Pro
+              </span>
+              <span className="text-[11px] dark:text-gray-400 light:text-slate-500 truncate">
+                15m and 5m alignments unlock richer correlation badges and deeper chains.
+              </span>
+            </div>
+          </div>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 inline-flex items-center gap-1 shrink-0">
+            <span>Unlock</span>
+            <span className="material-symbols-outlined text-[14px] transition-transform group-hover:translate-x-0.5">
+              arrow_forward
+            </span>
+          </span>
+        </button>
 
         <HowItWorksCollapsible
           body={
@@ -269,6 +309,201 @@ export const CoreLayerVariant: React.FC = () => {
       </div>
 
       <UpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} blocking={false} />
+    </div>
+  );
+};
+
+interface QuickFilterChipsProps {
+  directionFilter: DirectionFilter;
+  onDirectionChange: (d: DirectionFilter) => void;
+  freshOnly: boolean;
+  onFreshChange: (b: boolean) => void;
+  totalShown: number;
+}
+
+const QuickFilterChips: React.FC<QuickFilterChipsProps> = ({
+  directionFilter,
+  onDirectionChange,
+  freshOnly,
+  onFreshChange,
+  totalShown,
+}) => {
+  const anyActive = directionFilter !== 'all' || freshOnly;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[10px] font-bold uppercase tracking-widest dark:text-gray-500 light:text-slate-400 mr-1">
+        Quick filter
+      </span>
+      <Chip
+        active={directionFilter === 'BUY'}
+        tone="primary"
+        icon="trending_up"
+        label="BUY only"
+        onClick={() => onDirectionChange(directionFilter === 'BUY' ? 'all' : 'BUY')}
+      />
+      <Chip
+        active={directionFilter === 'SELL'}
+        tone="red"
+        icon="trending_down"
+        label="SELL only"
+        onClick={() => onDirectionChange(directionFilter === 'SELL' ? 'all' : 'SELL')}
+      />
+      <Chip
+        active={freshOnly}
+        tone="primary"
+        icon="auto_awesome"
+        label="Fresh only"
+        onClick={() => onFreshChange(!freshOnly)}
+      />
+      <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-mono dark:text-gray-500 light:text-slate-400">
+        <span className="material-symbols-outlined text-[14px]">filter_alt</span>
+        Showing
+        <span className="text-primary font-black tabular-nums">{totalShown}</span>
+      </span>
+      {anyActive && (
+        <button
+          type="button"
+          onClick={() => {
+            onDirectionChange('all');
+            onFreshChange(false);
+          }}
+          className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border dark:border-white/10 light:border-slate-200 dark:text-gray-400 light:text-slate-500 hover:text-primary hover:border-primary/30 transition-colors"
+        >
+          Clear
+        </button>
+      )}
+    </div>
+  );
+};
+
+const Chip: React.FC<{
+  active: boolean;
+  tone: 'primary' | 'red';
+  icon: string;
+  label: string;
+  onClick: () => void;
+}> = ({ active, tone, icon, label, onClick }) => {
+  const activeStyle =
+    tone === 'primary'
+      ? 'bg-primary/15 text-primary border-primary/40 shadow-[0_0_10px_-2px_rgba(19,236,55,0.45)]'
+      : 'bg-red-500/15 text-red-400 border-red-500/40 shadow-[0_0_10px_-2px_rgba(239,68,68,0.45)]';
+  const inactiveStyle =
+    'dark:border-white/10 light:border-slate-200 dark:text-gray-400 light:text-slate-500 dark:bg-white/[0.03] light:bg-white/70 hover:dark:border-white/20 hover:dark:text-gray-200';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-black uppercase tracking-wider transition-all ${
+        active ? activeStyle : inactiveStyle
+      }`}
+    >
+      <span className="material-symbols-outlined text-[14px]">{icon}</span>
+      {label}
+    </button>
+  );
+};
+
+interface VariantHeroProps {
+  variantMeta: { label: string; shortLabel: string; tagline: string; icon: string };
+  activeCount: number;
+  deepestDepth: number;
+  highCorrCount: number;
+  enabled: boolean;
+}
+
+const VariantHero: React.FC<VariantHeroProps> = ({
+  variantMeta,
+  activeCount,
+  deepestDepth,
+  highCorrCount,
+  enabled,
+}) => (
+  <header className="relative overflow-hidden rounded-2xl border dark:border-white/10 light:border-slate-200 dark:bg-[#0d1310]/80 light:bg-white/90 backdrop-blur-md">
+    <div
+      aria-hidden
+      className="pointer-events-none absolute inset-0 dark:bg-cinematic-gradient light:bg-cinematic-gradient-light opacity-90"
+    />
+    <div aria-hidden className="pointer-events-none absolute inset-0 bg-grid-pattern opacity-50" />
+    <span
+      aria-hidden
+      className="pointer-events-none absolute -top-24 -right-16 h-64 w-64 rounded-full bg-primary/15 blur-3xl"
+    />
+
+    <div className="relative px-5 md:px-6 pt-6 pb-5 flex flex-col gap-4">
+      <div className="flex items-center justify-between gap-2">
+        <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-full border border-primary/30 bg-primary/10">
+          <span className="material-symbols-outlined text-primary text-[16px] drop-shadow-[0_0_6px_rgba(19,236,55,0.5)]">
+            {variantMeta.icon}
+          </span>
+          <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+            {variantMeta.shortLabel} · Core-Layer
+          </span>
+        </div>
+        <span
+          className={`inline-flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-widest px-2 py-1 rounded-full border ${
+            enabled
+              ? 'border-primary/30 bg-primary/10 text-primary'
+              : 'dark:border-white/10 light:border-slate-200 dark:text-gray-500 light:text-slate-400'
+          }`}
+        >
+          <span
+            aria-hidden
+            className={`inline-block h-1.5 w-1.5 rounded-full ${
+              enabled ? 'bg-primary animate-pulse' : 'dark:bg-gray-500 light:bg-slate-400'
+            }`}
+          />
+          {enabled ? 'Live' : 'Preview'}
+        </span>
+      </div>
+
+      <div>
+        <h1 className="text-2xl md:text-4xl font-black tracking-tight dark:text-white light:text-slate-900 leading-tight">
+          {variantMeta.label}
+        </h1>
+        <p className="mt-2 text-sm dark:text-gray-400 light:text-slate-500">{variantMeta.tagline}</p>
+      </div>
+
+      <div className="grid grid-cols-3 gap-2 md:gap-3 mt-1">
+        <HeroStat icon="bolt" label="Active" value={activeCount} accent="primary" />
+        <HeroStat
+          icon="layers"
+          label="Deepest"
+          value={deepestDepth > 0 ? `${deepestDepth}-deep` : '—'}
+          accent="amber"
+        />
+        <HeroStat icon="link" label="High-corr" value={highCorrCount} accent="sky" />
+      </div>
+    </div>
+  </header>
+);
+
+const HERO_ACCENT: Record<'primary' | 'amber' | 'sky', { text: string; bg: string; border: string }> = {
+  primary: { text: 'text-primary', bg: 'bg-primary/10', border: 'border-primary/30' },
+  amber: { text: 'text-amber-400', bg: 'bg-amber-400/10', border: 'border-amber-400/30' },
+  sky: { text: 'text-sky-400', bg: 'bg-sky-400/10', border: 'border-sky-400/30' },
+};
+
+const HeroStat: React.FC<{
+  icon: string;
+  label: string;
+  value: number | string;
+  accent: 'primary' | 'amber' | 'sky';
+}> = ({ icon, label, value, accent }) => {
+  const a = HERO_ACCENT[accent];
+  return (
+    <div className="flex items-center gap-2.5 rounded-xl border dark:border-white/10 light:border-slate-200 dark:bg-white/[0.03] light:bg-white/70 px-3 py-2.5">
+      <span className={`grid h-9 w-9 place-items-center rounded-lg border ${a.bg} ${a.border} ${a.text} shrink-0`}>
+        <span className="material-symbols-outlined text-[18px]">{icon}</span>
+      </span>
+      <div className="min-w-0">
+        <div className="text-[10px] font-bold uppercase tracking-widest dark:text-gray-500 light:text-slate-400 leading-none">
+          {label}
+        </div>
+        <div className="mt-1 text-lg font-black tabular-nums dark:text-white light:text-slate-900 leading-none truncate">
+          {value}
+        </div>
+      </div>
     </div>
   );
 };
