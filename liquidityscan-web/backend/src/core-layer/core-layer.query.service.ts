@@ -250,10 +250,14 @@ export class CoreLayerQueryService {
         for (const tf of chain) {
             const close = storedCloses[tf];
             if (typeof close !== 'number') continue;
-            // ADR D13 HTF exception — weekly and daily always render as steady
-            // regardless of the literal lifecycle. The literal state remains in
-            // the DB for future analytics queries (ADR D14).
-            if (tf === 'W' || tf === '1D') {
+            // ADR D13 HTF exception — weekly always renders as steady regardless
+            // of the literal lifecycle (a "fresh on weekly" affordance is not
+            // actionable for intraday traders since the window spans 7 days).
+            // 1D renders its actual computed state — daily fresh/breathing IS
+            // actionable timing information ("the daily setup just confirmed
+            // within the last 24h"). The literal state remains in the DB for
+            // future analytics queries (ADR D14).
+            if (tf === 'W') {
                 refreshedLifeState[tf] = 'steady';
             } else {
                 refreshedLifeState[tf] = computeLifeState(tf, close, now);

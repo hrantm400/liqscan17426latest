@@ -109,23 +109,67 @@ describe('CoreLayerQueryService', () => {
     });
 
     describe('HTF override', () => {
-        it('forces W and 1D to steady while deriving non-HTF from close timestamps', async () => {
+        it('forces W to steady regardless of dt; non-HTF derived from close timestamps', async () => {
             seedSignal({
-                id: 'htf',
+                id: 'htf-w',
                 tfLastCandleClose: {
-                    W: now - 1000, // very fresh
-                    '1D': now - 1000, // very fresh
+                    W: now - 1000, // very fresh — would be 'fresh' if computed
                     '4H': now - TF_CANDLE_MS['4H'] * 1.5, // within breathing window
                 },
-                tfLifeState: { W: 'fresh', '1D': 'fresh', '4H': 'breathing' },
+                chain: ['W', '4H'],
+                tfLifeState: { W: 'fresh', '4H': 'breathing' },
             });
 
             const res = await service.listSignals({});
             expect(res.signals).toHaveLength(1);
             const dto = res.signals[0];
             expect(dto.tfLifeState.W).toBe('steady');
-            expect(dto.tfLifeState['1D']).toBe('steady');
             expect(dto.tfLifeState['4H']).toBe('breathing');
+        });
+
+        it('returns 1D actual computed state — fresh when within candleMs', async () => {
+            seedSignal({
+                id: '1d-fresh',
+                tfLastCandleClose: {
+                    '1D': now - TF_CANDLE_MS['1D'] / 4, // dt < candleMs → fresh
+                },
+                chain: ['1D'],
+                anchor: 'DAILY',
+                depth: 1,
+                tfLifeState: { '1D': 'steady' }, // stored value is stale; read-path overrides
+            });
+            const dto = await service.getSignalById('1d-fresh');
+            expect(dto!.tfLifeState['1D']).toBe('fresh');
+        });
+
+        it('returns 1D actual computed state — breathing within 3*candleMs window', async () => {
+            seedSignal({
+                id: '1d-breathing',
+                tfLastCandleClose: {
+                    '1D': now - TF_CANDLE_MS['1D'] * 1.5, // candleMs <= dt < 3*candleMs
+                },
+                chain: ['1D'],
+                anchor: 'DAILY',
+                depth: 1,
+                tfLifeState: { '1D': 'fresh' },
+            });
+            const dto = await service.getSignalById('1d-breathing');
+            expect(dto!.tfLifeState['1D']).toBe('breathing');
+        });
+
+        it('returns 1D actual computed state — steady once dt >= 3*candleMs', async () => {
+            seedSignal({
+                id: '1d-steady',
+                tfLastCandleClose: {
+                    '1D': now - TF_CANDLE_MS['1D'] * 4, // well past breathing window
+                },
+                chain: ['1D'],
+                anchor: 'DAILY',
+                depth: 1,
+                tfLifeState: { '1D': 'fresh' },
+            });
+            const dto = await service.getSignalById('1d-steady');
+            expect(dto!.tfLifeState['1D']).toBe('steady');
         });
 
         it('recomputes non-HTF life state from stored closes on read', async () => {
