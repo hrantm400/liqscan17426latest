@@ -11,6 +11,7 @@ import { FilterMenu } from '../components/shared/FilterMenu';
 import { TrendIndicator } from '../components/shared/TrendIndicator';
 import { TimeDisplay } from '../components/shared/TimeDisplay';
 import { PageHeader } from '../components/layout/PageHeader';
+import { ScannerHero } from '../components/shared/ScannerHero';
 import { AnimatedCard } from '../components/animations/AnimatedCard';
 import { AnimatedNumber } from '../components/animations/AnimatedNumber';
 import { useMarketData } from '../hooks/useMarketData';
@@ -329,6 +330,23 @@ export function MonitorBias() {
         ]}
         lastUpdated="Just now"
         onRefresh={refetch}
+      />
+
+      <ScannerHero
+        slug="bias"
+        eyebrow="Strategy B-04 · Daily Bias"
+        icon="explore"
+        title="Bias Shifts"
+        subtitle="Directional bias flips across 4H / 1D / 1W."
+        tone="violet"
+        kpiTotal={timeframeStats['4h'] + timeframeStats['1d'] + timeframeStats['1w']}
+        kpis={[
+          { label: '4H', value: timeframeStats['4h'], hint: 'Mid-term' },
+          { label: '1D', value: timeframeStats['1d'], hint: 'Daily' },
+          { label: '1W', value: timeframeStats['1w'], hint: 'Macro' },
+        ]}
+        linkTo="/core-layer/bias"
+        linkLabel="Core-Layer Bias"
       />
 
       {/* Timeframe Cards */}

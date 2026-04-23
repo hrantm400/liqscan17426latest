@@ -47,26 +47,31 @@ export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 
   const timeAgo = formatTimeAgo(now - tfClose);
   const showPill = state === 'fresh' || state === 'breathing';
 
+  const tfBadgeClass = tfBadge(state, phase);
+
   return (
     <div
-      className={`aspect-square rounded-xl p-3 flex flex-col gap-2 dark:bg-black/30 light:bg-white/90 ${borderClass(
+      className={`group aspect-square rounded-xl p-3 flex flex-col gap-2 dark:bg-[#0d1310]/80 light:bg-white/90 backdrop-blur-sm transition-all duration-200 hover:shadow-glow ${borderClass(
         state,
         phase,
       )}`}
     >
       <header className="flex items-center justify-between gap-2 min-w-0 shrink-0">
         <div className="flex items-center gap-2 min-w-0 flex-wrap">
-          <span className="text-[13px] font-black dark:text-white light:text-slate-900 font-mono">
+          <span
+            className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[11px] font-mono font-black tracking-wider leading-none border ${tfBadgeClass}`}
+          >
             {tf}
           </span>
           {showPill && <LifeStatePill state={state} />}
           {patternKind && (
-            <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border dark:border-white/10 light:border-slate-200 dark:text-gray-300 light:text-slate-600 tracking-wider">
+            <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded border dark:border-white/10 light:border-slate-200 dark:bg-white/[0.04] light:bg-slate-50 dark:text-gray-300 light:text-slate-600 tracking-wider leading-none">
               {patternKind}
             </span>
           )}
         </div>
-        <span className="text-[10px] font-mono dark:text-gray-500 light:text-slate-400 whitespace-nowrap">
+        <span className="inline-flex items-center gap-1 text-[10px] font-mono dark:text-gray-500 light:text-slate-400 whitespace-nowrap">
+          <span className="material-symbols-outlined text-[12px]">schedule</span>
           {timeAgo}
         </span>
       </header>
@@ -84,8 +89,9 @@ export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 
       </div>
 
       <footer className="flex items-center justify-between gap-2 text-[10px] font-mono shrink-0">
-        <span className="dark:text-gray-500 light:text-slate-400">
-          {signal.pair} · drag / scroll
+        <span className="inline-flex items-center gap-1 dark:text-gray-500 light:text-slate-400">
+          <span className="material-symbols-outlined text-[12px]">drag_indicator</span>
+          drag / scroll
         </span>
         <a
           href={tvUrl(signal.pair, tf)}
@@ -93,13 +99,25 @@ export const CoreLayerChartTile: React.FC<Props> = ({ signal, tf, candleCount = 
           rel="noopener noreferrer"
           className="inline-flex items-center gap-1 font-bold dark:text-gray-300 light:text-slate-600 hover:text-primary transition-colors"
         >
-          Open in TradingView
-          <span className="material-symbols-outlined text-[12px]">north_east</span>
+          TradingView
+          <span className="material-symbols-outlined text-[12px] transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5">
+            north_east
+          </span>
         </a>
       </footer>
     </div>
   );
 };
+
+function tfBadge(state: TFLifeState, phase: 1 | 2 | null): string {
+  if (state === 'fresh') return 'bg-primary/15 text-primary border-primary/40';
+  if (state === 'breathing') {
+    return phase === 2
+      ? 'bg-amber-700/15 text-amber-300 border-amber-700/50'
+      : 'bg-amber-400/15 text-amber-400 border-amber-400/40';
+  }
+  return 'dark:bg-white/[0.04] light:bg-slate-100 dark:text-white light:text-slate-900 dark:border-white/10 light:border-slate-200';
+}
 
 function borderClass(state: TFLifeState, phase: 1 | 2 | null): string {
   if (state === 'fresh') {
