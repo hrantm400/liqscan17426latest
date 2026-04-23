@@ -42,11 +42,15 @@ const TABS: ReadonlyArray<{ key: TabView; label: string; icon: string }> = [
  * getMockSignalsByVariant when stats.enabled is false or the list query
  * fails — matches the rollback contract used on the overview page.
  */
+type DirectionFilter = 'all' | 'BUY' | 'SELL';
+
 export const CoreLayerVariant: React.FC = () => {
   const { variant: variantSlug } = useParams<{ variant: string }>();
   const variant = variantSlug ? VARIANT_FROM_SLUG[variantSlug] : undefined;
   const [searchParams, setSearchParams] = useSearchParams();
   const [highCorrelationOnly, setHighCorrelationOnly] = useState(false);
+  const [directionFilter, setDirectionFilter] = useState<DirectionFilter>('all');
+  const [freshOnly, setFreshOnly] = useState(false);
   const [upgradeOpen, setUpgradeOpen] = useState(false);
   const [justPromotedIds, setJustPromotedIds] = useState<Set<string>>(() => new Set());
 
@@ -94,9 +98,14 @@ export const CoreLayerVariant: React.FC = () => {
       if (activeTab === 'closed' && s.status !== 'CLOSED') return false;
       if (activeAnchor !== 'all' && s.anchor !== activeAnchor) return false;
       if (highCorrelationOnly && s.correlationPairs.length === 0) return false;
+      if (directionFilter !== 'all' && s.direction !== directionFilter) return false;
+      if (freshOnly) {
+        const hasFresh = Object.values(s.tfLifeState).some((st) => st === 'fresh');
+        if (!hasFresh) return false;
+      }
       return true;
     });
-  }, [allSignals, activeTab, activeAnchor, highCorrelationOnly]);
+  }, [allSignals, activeTab, activeAnchor, highCorrelationOnly, directionFilter, freshOnly]);
 
   const anchorCounts = useMemo(() => {
     const base: Record<AnchorType, number> = { WEEKLY: 0, DAILY: 0, FOURHOUR: 0 };
@@ -227,6 +236,15 @@ export const CoreLayerVariant: React.FC = () => {
           </label>
         </div>
 
+        {/* quick-filter chips: direction & freshness — narrows the depth grid in one tap */}
+        <QuickFilterChips
+          directionFilter={directionFilter}
+          onDirectionChange={setDirectionFilter}
+          freshOnly={freshOnly}
+          onFreshChange={setFreshOnly}
+          totalShown={filtered.length}
+        />
+
         {isLoading ? (
           <CoreLayerState kind="loading" />
         ) : isError ? (
@@ -292,6 +310,97 @@ export const CoreLayerVariant: React.FC = () => {
 
       <UpgradeModal open={upgradeOpen} onClose={() => setUpgradeOpen(false)} blocking={false} />
     </div>
+  );
+};
+
+interface QuickFilterChipsProps {
+  directionFilter: DirectionFilter;
+  onDirectionChange: (d: DirectionFilter) => void;
+  freshOnly: boolean;
+  onFreshChange: (b: boolean) => void;
+  totalShown: number;
+}
+
+const QuickFilterChips: React.FC<QuickFilterChipsProps> = ({
+  directionFilter,
+  onDirectionChange,
+  freshOnly,
+  onFreshChange,
+  totalShown,
+}) => {
+  const anyActive = directionFilter !== 'all' || freshOnly;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <span className="text-[10px] font-bold uppercase tracking-widest dark:text-gray-500 light:text-slate-400 mr-1">
+        Quick filter
+      </span>
+      <Chip
+        active={directionFilter === 'BUY'}
+        tone="primary"
+        icon="trending_up"
+        label="BUY only"
+        onClick={() => onDirectionChange(directionFilter === 'BUY' ? 'all' : 'BUY')}
+      />
+      <Chip
+        active={directionFilter === 'SELL'}
+        tone="red"
+        icon="trending_down"
+        label="SELL only"
+        onClick={() => onDirectionChange(directionFilter === 'SELL' ? 'all' : 'SELL')}
+      />
+      <Chip
+        active={freshOnly}
+        tone="primary"
+        icon="auto_awesome"
+        label="Fresh only"
+        onClick={() => onFreshChange(!freshOnly)}
+      />
+      <span className="ml-auto inline-flex items-center gap-1 text-[10px] font-mono dark:text-gray-500 light:text-slate-400">
+        <span className="material-symbols-outlined text-[14px]">filter_alt</span>
+        Showing
+        <span className="text-primary font-black tabular-nums">{totalShown}</span>
+      </span>
+      {anyActive && (
+        <button
+          type="button"
+          onClick={() => {
+            onDirectionChange('all');
+            onFreshChange(false);
+          }}
+          className="text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-md border dark:border-white/10 light:border-slate-200 dark:text-gray-400 light:text-slate-500 hover:text-primary hover:border-primary/30 transition-colors"
+        >
+          Clear
+        </button>
+      )}
+    </div>
+  );
+};
+
+const Chip: React.FC<{
+  active: boolean;
+  tone: 'primary' | 'red';
+  icon: string;
+  label: string;
+  onClick: () => void;
+}> = ({ active, tone, icon, label, onClick }) => {
+  const activeStyle =
+    tone === 'primary'
+      ? 'bg-primary/15 text-primary border-primary/40 shadow-[0_0_10px_-2px_rgba(19,236,55,0.45)]'
+      : 'bg-red-500/15 text-red-400 border-red-500/40 shadow-[0_0_10px_-2px_rgba(239,68,68,0.45)]';
+  const inactiveStyle =
+    'dark:border-white/10 light:border-slate-200 dark:text-gray-400 light:text-slate-500 dark:bg-white/[0.03] light:bg-white/70 hover:dark:border-white/20 hover:dark:text-gray-200';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[11px] font-black uppercase tracking-wider transition-all ${
+        active ? activeStyle : inactiveStyle
+      }`}
+    >
+      <span className="material-symbols-outlined text-[14px]">{icon}</span>
+      {label}
+    </button>
   );
 };
 
