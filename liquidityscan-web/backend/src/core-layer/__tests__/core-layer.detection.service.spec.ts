@@ -1,6 +1,6 @@
 import { CoreLayerDetectionService } from '../core-layer.detection.service';
 import { CoreLayerLifecycleService } from '../core-layer.lifecycle.service';
-import { TF_CANDLE_MS } from '../core-layer.constants';
+import { normalizeTimeframe, TF_CANDLE_MS } from '../core-layer.constants';
 import { FakePrismaService } from './fake-prisma';
 
 /**
@@ -20,7 +20,18 @@ describe('CoreLayerDetectionService', () => {
         service = new CoreLayerDetectionService(prisma as any, lifecycle);
     });
 
+    // Default detectedAt is back-dated by one TF interval so the stored close
+    // (detectedAt + TF_CANDLE_MS[tf], per PR-A) lands exactly at anchorNow.
+    // This keeps the §4 temporal-coherence gate happy: every TF in a default-
+    // seeded multi-TF chain has the same stored close, so no bucket TF is
+    // "stale" relative to another. Tests that care about expiry pass an
+    // explicit detectedAt override.
+    function defaultDetectedAt(timeframe: string): Date {
+        const tf = normalizeTimeframe(timeframe);
+        return new Date(anchorNow - (tf ? TF_CANDLE_MS[tf] : 60_000));
+    }
     function seedRow(overrides: Partial<Record<string, any>>) {
+        const timeframe = (overrides.timeframe ?? '1d') as string;
         prisma.superEngulfingSignal.rows.push({
             id: overrides.id ?? `row-${prisma.superEngulfingSignal.rows.length}`,
             strategyType: 'SUPER_ENGULFING',
@@ -28,7 +39,7 @@ describe('CoreLayerDetectionService', () => {
             timeframe: '1d',
             signalType: 'BUY',
             lifecycleStatus: 'ACTIVE',
-            detectedAt: new Date(anchorNow - 60_000),
+            detectedAt: defaultDetectedAt(timeframe),
             pattern_v2: 'REV_PLUS_BULLISH',
             ...overrides,
         });
@@ -152,10 +163,15 @@ describe('CoreLayerDetectionService', () => {
             async (timeframe, tf) => {
                 // Pair each TF with a second TF that gives a chain of length ≥ 2
                 // with a valid anchor, so the bucket survives classifyAnchor and
-                // reaches upsertChain.
+                // reaches upsertChain. Back-date both detectedAts by one TF
+                // interval each so the stored closes land at anchorNow and the
+                // §4 temporal-coherence gate keeps both TFs.
                 const partnerTf = tf === 'W' ? '1d' : '1w';
-                const partnerDetectedAt = new Date(anchorNow - 120_000);
-                const targetDetectedAt = new Date(anchorNow - 60_000);
+                const partnerNormalized = tf === 'W' ? '1D' : 'W';
+                const partnerDetectedAt = new Date(
+                    anchorNow - TF_CANDLE_MS[partnerNormalized],
+                );
+                const targetDetectedAt = new Date(anchorNow - TF_CANDLE_MS[tf]);
                 seedRow({
                     id: `partner-${timeframe}`,
                     timeframe: partnerTf,

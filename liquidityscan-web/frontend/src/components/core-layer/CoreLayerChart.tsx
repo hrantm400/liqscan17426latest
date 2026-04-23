@@ -24,13 +24,19 @@ interface CoreLayerChartProps {
   signalCloseMs?: number | null;
   /**
    * Life state for the marker color: `fresh` → green, `breathing` → amber,
-   * `steady` → muted gray. Defaults to `steady`.
+   * `steady` → muted gray. Also drives the signal-candle's position inside
+   * the 15-bar window so the viewer can always see post-signal continuation.
    */
   lifeState?: TFLifeState;
   /**
-   * Max candles fetched. The chart keeps a `context + signal + tail`
-   * window of ~15 bars by default — 7 before, signal, 7 after (or the
-   * last 15 total if no signal is identified).
+   * Breathing sub-phase (1 or 2). Null when not breathing. Used alongside
+   * `lifeState` to shift the signal candle one bar further from the right
+   * edge as the signal ages.
+   */
+  breathingPhase?: 1 | 2 | null;
+  /**
+   * Max candles fetched. The chart keeps a 15-bar window and positions the
+   * signal inside it based on `lifeState` (see §14 of the spec).
    */
   candleCount?: number;
   className?: string;
@@ -68,6 +74,20 @@ const DOWN_COLOR = '#ff4444';
 const WARN_COLOR = '#f97316';
 
 /**
+ * Target index for the signal candle inside the 15-bar window (0-indexed,
+ * where 14 = rightmost). Values track spec §14's recommendation so the
+ * viewer sees more post-signal continuation as a signal ages.
+ */
+function pickSignalPosition(
+  lifeState: TFLifeState,
+  breathingPhase: 1 | 2 | null,
+): number {
+  if (lifeState === 'fresh') return 14;
+  if (lifeState === 'breathing') return breathingPhase === 2 ? 12 : 13;
+  return 12; // steady (and HTF-overridden W/1D)
+}
+
+/**
  * Interactive candlestick mini-chart for Core-Layer pair-detail tiles,
  * built on `lightweight-charts` (same engine as the full InteractiveLiveChart
  * on SignalDetails) but scoped to ~15 bars for a compact at-a-glance view.
@@ -93,6 +113,7 @@ export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
   variant,
   signalCloseMs = null,
   lifeState = 'steady',
+  breathingPhase = null,
   candleCount = 30,
   className = '',
 }) => {
@@ -126,13 +147,21 @@ export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
       }
     }
 
-    // 7 before + signal + 7 after = 15-bar window. Clamp to array bounds.
+    // Spec §14 — 15-bar window with the signal candle positioned by life state
+    // so post-signal continuation is always visible in proportion to how fresh
+    // the signal is:
+    //   fresh                → position 14 (rightmost, 0 post-candles)
+    //   breathing phase 1/2  → position 13 (1 post-candle)
+    //   breathing phase 2/2  → position 12 (2 post-candles)
+    //   steady               → position 12 (2 post-candles, continuation context)
+    // HTF override: W and 1D render life-state = 'steady' per spec §7, so they
+    // naturally fall into the 2-post-candle layout.
     const WINDOW = 15;
-    const HALF = 7;
+    const targetPos = pickSignalPosition(lifeState, breathingPhase);
     let start: number;
     let end: number;
     if (sig >= 0) {
-      start = Math.max(0, sig - HALF);
+      start = Math.max(0, sig - targetPos);
       end = Math.min(raw.length, start + WINDOW);
       start = Math.max(0, end - WINDOW);
     } else {
@@ -142,7 +171,7 @@ export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
     const slice = raw.slice(start, end);
     const sigInSlice = sig >= 0 ? sig - start : -1;
     return { windowCandles: slice, signalIdx: sigInSlice };
-  }, [query.data, signalCloseMs, tf]);
+  }, [query.data, signalCloseMs, tf, lifeState, breathingPhase]);
 
   return (
     <ChartBody
