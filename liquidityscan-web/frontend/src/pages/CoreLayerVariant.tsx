@@ -167,11 +167,23 @@ export const CoreLayerVariant: React.FC = () => {
       </PageHeader>
 
       <div className="px-4 md:px-6 flex flex-col gap-5">
-        <header className="flex flex-col gap-1">
-          <h1 className="text-2xl md:text-3xl font-black dark:text-white light:text-slate-900 tracking-tight">
+        <header className="relative overflow-hidden rounded-2xl border dark:border-white/10 light:border-slate-200 dark:bg-gradient-to-br dark:from-white/[0.04] dark:to-transparent light:bg-gradient-to-br light:from-white light:to-slate-50/60 px-5 py-5 flex flex-col gap-2">
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -top-16 -right-16 h-48 w-48 rounded-full bg-primary/15 blur-3xl opacity-50"
+          />
+          <div className="relative flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary text-[20px] drop-shadow-[0_0_6px_rgba(19,236,55,0.5)]">
+              {variantMeta.icon}
+            </span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+              {variantMeta.shortLabel} · Core-Layer
+            </span>
+          </div>
+          <h1 className="relative text-2xl md:text-3xl font-black dark:text-white light:text-slate-900 tracking-tight">
             {variantMeta.label}
           </h1>
-          <p className="text-sm dark:text-gray-400 light:text-slate-500">
+          <p className="relative text-sm dark:text-gray-400 light:text-slate-500">
             {variantMeta.tagline}
           </p>
         </header>
@@ -182,9 +194,9 @@ export const CoreLayerVariant: React.FC = () => {
           onSelect={setAnchor}
         />
 
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 rounded-xl border dark:border-white/10 light:border-slate-200 dark:bg-white/[0.02] light:bg-white/70 px-3 py-2">
           <div
-            className="flex items-center gap-1.5 p-1 rounded-xl dark:bg-white/[0.03] light:bg-green-50/50 border dark:border-white/5 light:border-green-200"
+            className="flex items-center gap-1 p-1 rounded-lg dark:bg-black/30 light:bg-slate-100/80 border dark:border-white/5 light:border-slate-200 self-start"
             role="tablist"
             aria-label="Signal status filter"
           >
@@ -197,10 +209,10 @@ export const CoreLayerVariant: React.FC = () => {
                   role="tab"
                   aria-selected={active}
                   onClick={() => setTab(t.key)}
-                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-colors ${
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-[11px] font-bold uppercase tracking-wider transition-all ${
                     active
-                      ? 'bg-primary/15 text-primary shadow-[0_0_10px_rgba(19,236,55,0.15)]'
-                      : 'dark:text-gray-400 light:text-slate-500 hover:text-primary'
+                      ? 'bg-primary/20 text-primary shadow-[0_0_10px_rgba(19,236,55,0.18)]'
+                      : 'dark:text-gray-400 light:text-slate-500 hover:text-primary hover:bg-primary/5'
                   }`}
                 >
                   <span className="material-symbols-outlined text-[14px]">{t.icon}</span>
@@ -209,13 +221,21 @@ export const CoreLayerVariant: React.FC = () => {
               );
             })}
           </div>
-          <label className="inline-flex items-center gap-2 text-xs dark:text-gray-300 light:text-slate-600 cursor-pointer select-none">
+          <label
+            className={`inline-flex items-center gap-2 text-xs cursor-pointer select-none px-3 py-1.5 rounded-md transition-colors ${
+              highCorrelationOnly
+                ? 'bg-primary/10 text-primary border border-primary/30'
+                : 'dark:text-gray-300 light:text-slate-600 border border-transparent hover:border-primary/20'
+            }`}
+            title="Show only chains where two TFs in the chain are a known correlation pair (e.g. 1D + 1H)."
+          >
             <input
               type="checkbox"
               checked={highCorrelationOnly}
               onChange={(e) => setHighCorrelationOnly(e.target.checked)}
               className="w-4 h-4 rounded border-white/20 bg-transparent accent-primary"
             />
+            <span className="material-symbols-outlined text-[14px]">link</span>
             <span>Only high-correlation chains</span>
           </label>
         </div>
@@ -239,16 +259,31 @@ export const CoreLayerVariant: React.FC = () => {
           <DepthGrid signals={filtered} justPromotedIds={justPromotedIds} />
         )}
 
-        <p className="text-[11px] dark:text-gray-500 light:text-slate-400 text-center">
-          <button
-            type="button"
-            onClick={() => setUpgradeOpen(true)}
-            className="underline decoration-dotted underline-offset-2 hover:text-primary transition-colors"
-          >
-            Sub-1h TFs are Pro
-          </button>{' '}
-          — 15m and 5m alignments unlock richer correlation badges and deeper chains.
-        </p>
+        <button
+          type="button"
+          onClick={() => setUpgradeOpen(true)}
+          className="group flex items-center justify-between gap-3 rounded-xl border dark:border-amber-400/20 light:border-amber-300/60 dark:bg-amber-500/[0.06] light:bg-amber-50/70 px-4 py-3 transition-colors hover:border-amber-400/50 hover:bg-amber-500/[0.1]"
+        >
+          <div className="flex items-center gap-3 min-w-0 text-left">
+            <span className="material-symbols-outlined text-amber-400 text-[20px] shrink-0">
+              workspace_premium
+            </span>
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs font-black uppercase tracking-wider text-amber-400">
+                Sub-1h TFs are Pro
+              </span>
+              <span className="text-[11px] dark:text-gray-400 light:text-slate-500 truncate">
+                15m and 5m alignments unlock richer correlation badges and deeper chains.
+              </span>
+            </div>
+          </div>
+          <span className="text-[10px] font-bold uppercase tracking-wider text-amber-400 inline-flex items-center gap-1 shrink-0">
+            <span>Unlock</span>
+            <span className="material-symbols-outlined text-[14px] transition-transform group-hover:translate-x-0.5">
+              arrow_forward
+            </span>
+          </span>
+        </button>
 
         <HowItWorksCollapsible
           body={

@@ -75,11 +75,24 @@ export const CoreLayer: React.FC = () => {
       </PageHeader>
 
       <div className="px-4 md:px-6 flex flex-col gap-5">
-        <header className="flex flex-col gap-2">
-          <h1 className="text-2xl md:text-3xl font-black dark:text-white light:text-slate-900 tracking-tight">
-            Core-Layer — alignment across timeframes
+        <header className="relative overflow-hidden rounded-2xl border dark:border-white/10 light:border-slate-200 dark:bg-gradient-to-br dark:from-white/[0.04] dark:to-transparent light:bg-gradient-to-br light:from-white light:to-slate-50/60 px-5 py-5 flex flex-col gap-2">
+          {/* soft ambient glow tying the page to the primary brand color */}
+          <span
+            aria-hidden
+            className="pointer-events-none absolute -top-16 -left-16 h-48 w-48 rounded-full bg-primary/20 blur-3xl opacity-40"
+          />
+          <div className="relative flex items-center gap-2">
+            <span className="material-symbols-outlined text-primary text-[20px] drop-shadow-[0_0_6px_rgba(19,236,55,0.5)]">
+              hub
+            </span>
+            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">
+              Core-Layer
+            </span>
+          </div>
+          <h1 className="relative text-2xl md:text-3xl font-black dark:text-white light:text-slate-900 tracking-tight">
+            Alignment across timeframes
           </h1>
-          <p className="text-sm dark:text-gray-400 light:text-slate-500 max-w-2xl">
+          <p className="relative text-sm dark:text-gray-400 light:text-slate-500 max-w-2xl">
             Pairs where the same pattern is firing in the same direction across multiple
             timeframes. Not a trade signal — open the pair on TradingView to take your own.
           </p>
@@ -123,11 +136,27 @@ export const CoreLayer: React.FC = () => {
 
         <section className="flex flex-col gap-3">
           <header className="flex items-center justify-between">
-            <h2 className="text-sm font-black dark:text-white light:text-slate-900 tracking-wide uppercase">
-              Recent promotions
-            </h2>
-            <span className="text-[11px] font-mono dark:text-gray-500 light:text-slate-400">
-              {sourceLabel} · ↻
+            <div className="flex items-center gap-2">
+              <span className="material-symbols-outlined text-primary text-[18px]">
+                trending_up
+              </span>
+              <h2 className="text-sm font-black dark:text-white light:text-slate-900 tracking-wide uppercase">
+                Recent promotions
+              </h2>
+            </div>
+            <span
+              className={`inline-flex items-center gap-1.5 text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-full border ${
+                enabled
+                  ? 'border-primary/30 bg-primary/10 text-primary'
+                  : 'dark:border-white/10 light:border-slate-200 dark:text-gray-500 light:text-slate-400'
+              }`}
+              title={enabled ? 'Reading from live backend' : 'Showing preview / mock data'}
+            >
+              <span
+                aria-hidden
+                className={`inline-block h-1.5 w-1.5 rounded-full ${enabled ? 'bg-primary animate-pulse' : 'dark:bg-gray-500 light:bg-slate-400'}`}
+              />
+              {sourceLabel}
             </span>
           </header>
           {statsError && !statsQuery.data ? (
