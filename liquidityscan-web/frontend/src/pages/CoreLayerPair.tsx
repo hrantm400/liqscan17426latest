@@ -62,16 +62,28 @@ export const CoreLayerPair: React.FC = () => {
     return variant && pair ? getMockSignalByPair(variant, pair) : undefined;
   }, [enabled, liveSignal, variant, pair]);
 
+  // `enabled` is derived from `statsQuery.data?.enabled ?? false`, so it
+  // reads `false` on a cold load until stats resolves. We must NOT decide
+  // anything about live-lookup state until stats has answered — otherwise a
+  // direct-nav cold load races the stats fetch and lands in the "no signal"
+  // branch below before the live by-pair lookup ever runs.
+  const statsResolved = statsQuery.isFetched || statsQuery.isError;
   const liveLookupFinished =
-    !enabled ||
-    (byPairQuery.isFetched && !byPairQuery.isLoading && !detailQuery.isLoading);
+    statsResolved &&
+    (!enabled ||
+      (byPairQuery.isFetched && !byPairQuery.isLoading && !detailQuery.isLoading));
   const liveLookupFailed =
     enabled && liveLookupFinished && !liveSignal && !byPairQuery.isError;
 
   if (!variant) return <Navigate to="/core-layer" replace />;
 
-  // Loading: enabled + lookups still in flight + no cached/mock result yet.
-  if (enabled && !signal && !liveLookupFinished) {
+  // Loading: stats not yet resolved (cold-load direct-nav races it), OR
+  // stats said enabled=true but the by-pair / detail lookups are still in
+  // flight, AND we have no cached/mock result to render from. Without the
+  // first clause, a direct nav to /core-layer/<variant>/<pair> for a pair
+  // that's not in the mock seed would bounce to /core-layer/<variant>
+  // before the live lookup ever ran.
+  if (!signal && (!statsResolved || (enabled && !liveLookupFinished))) {
     return (
       <div className="flex flex-col gap-5 pb-10">
         <PageHeader breadcrumbs={[{ label: 'Core-Layer', path: '/core-layer' }, { label: pair ?? '' }]}>
