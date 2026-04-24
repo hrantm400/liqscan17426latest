@@ -4,7 +4,6 @@ import {
   init,
   dispose,
   LineType,
-  registerIndicator,
   registerOverlay,
   TooltipShowRule,
   type Chart,
@@ -56,38 +55,46 @@ function registerExtensions(): void {
   if (extensionsRegistered) return;
   extensionsRegistered = true;
 
-  // Forming-candle tint: a stacked indicator on the candle pane that paints a
-  // translucent rect over only the last bar when `tint=1`. lightweight-charts
-  // supports per-bar style overrides natively; klinecharts doesn't, so this
-  // figure overlay is the documented workaround (feasibility check, Step 1).
-  registerIndicator<{ tint: number }>({
-    name: 'formingTint',
-    shortName: '',
-    figures: [
-      {
-        key: 'tint',
-        type: 'rect',
-        attrs: ({ data, coordinate, barSpace }) => {
-          if (!data?.current || data.current.tint !== 1) return [];
-          const half = barSpace.gapBar / 2;
-          return [
-            {
-              x: coordinate.current.x - half,
-              y: 0,
-              width: barSpace.gapBar,
-              height: 100000, // clipped to pane bounds
-            },
-          ];
+  // Forming-candle tint: a translucent rect drawn over the in-progress bar's
+  // column. Implemented as an OVERLAY (not an indicator) because indicators
+  // stacked on the candle pane contribute their data values to the pane's
+  // y-axis auto-scale — for tint values 0/1 vs candle prices ~0.02 the
+  // merged scale becomes [0, 1] and squashes the candles to a 2% sliver.
+  // Overlays don't participate in scale calc, so the candle pane keeps its
+  // OHLC range and the tint just paints over the column.
+  registerOverlay({
+    name: 'cl-forming',
+    totalStep: 2,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    lock: true,
+    createPointFigures: ({ coordinates, bounding, barSpace }) => {
+      const c = coordinates[0];
+      if (!c) return [];
+      // Use the column-width-with-gap so the tint covers the full bar slot
+      // (body + wicks). barSpace is supplied by the engine on every layout
+      // pass; fall back to a reasonable default if the API ever changes
+      // shape so we don't render a zero-width rect.
+      const colWidth = barSpace?.gapBar ?? 10;
+      return [
+        {
+          type: 'rect',
+          attrs: {
+            x: c.x - colWidth / 2,
+            y: 0,
+            width: colWidth,
+            height: bounding.height,
+          },
+          styles: {
+            style: 'fill',
+            color: FORMING_FILL,
+            borderColor: FORMING_BORDER,
+            borderSize: 1,
+          },
         },
-        styles: () => ({
-          color: FORMING_FILL,
-          borderColor: FORMING_BORDER,
-          borderSize: 1,
-        }),
-      },
-    ],
-    calc: (list) =>
-      list.map((_, i) => ({ tint: i === list.length - 1 ? 1 : 0 })),
+      ];
+    },
   });
 
   // Day separator: dashed vertical line at one timestamp. Sub-daily TFs only.
@@ -362,7 +369,6 @@ const KlineChartBody: React.FC<KlineChartBodyProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const chartRef = useRef<Chart | null>(null);
   const overlayIdsRef = useRef<string[]>([]);
-  const indicatorIdRef = useRef<string | null>(null);
 
   // One-time chart construction. Theme changes re-skin via setStyles below
   // (no need to tear down + recreate, per feasibility check bonus).
@@ -374,15 +380,6 @@ const KlineChartBody: React.FC<KlineChartBodyProps> = ({
     const chart = init(container, { styles: buildStyles(isDark) });
     if (!chart) return;
     chartRef.current = chart;
-
-    // Forming-tint indicator stacked on the default candle pane. Returns the
-    // pane id; we don't care about it here — the indicator lives for the
-    // chart's lifetime and recalculates on each applyNewData call.
-    indicatorIdRef.current = chart.createIndicator(
-      'formingTint',
-      true,
-      { id: 'candle_pane' },
-    );
 
     const ro = new ResizeObserver(() => {
       chartRef.current?.resize();
@@ -402,7 +399,6 @@ const KlineChartBody: React.FC<KlineChartBodyProps> = ({
       }
       chartRef.current = null;
       overlayIdsRef.current = [];
-      indicatorIdRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -449,12 +445,23 @@ const KlineChartBody: React.FC<KlineChartBodyProps> = ({
     } catch {
       /* ignore */
     }
-    // formingIdx isn't passed to the data; the indicator's calc() always
-    // tints the last bar, which matches our findFormingCandleIdx when the
-    // last bar is forming. When it's NOT forming (e.g. signal is fresh and
-    // the last bar already closed), the tint is benign — we suppress it
-    // by removing the indicator and re-creating only when needed.
-    void formingIdx;
+
+    // Forming-candle tint as an overlay (not an indicator — see
+    // registerExtensions for why). Anchor on the forming bar's close price;
+    // the overlay's createPointFigures only uses the timestamp for x and
+    // ignores y entirely, but klinecharts requires a numeric `value`.
+    if (formingIdx >= 0 && formingIdx < data.length) {
+      const id = chart.createOverlay({
+        name: 'cl-forming',
+        points: [
+          {
+            timestamp: data[formingIdx].timestamp,
+            value: candles[formingIdx].close,
+          },
+        ],
+      });
+      if (typeof id === 'string' && id) overlayIdsRef.current.push(id);
+    }
 
     if (signalIdx >= 0 && signalIdx < data.length) {
       const sig = candles[signalIdx];
