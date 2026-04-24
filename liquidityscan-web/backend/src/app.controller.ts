@@ -1,5 +1,5 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { SkipThrottle, Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Public } from './auth/decorators/public.decorator';
 import { AppService } from './app.service';
 import { AppConfigService } from './app-config/app-config.service';
@@ -38,6 +38,7 @@ export class AppController {
   @Get('cmc/ranks')
   @UseGuards(ThrottlerGuard)
   @Throttle({ default: { limit: 40, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async getCmcRanks() {
     const now = Date.now();
     if (this.cachedCmcData && now - this.lastFetchTime < this.CMC_CACHE_TTL) {
