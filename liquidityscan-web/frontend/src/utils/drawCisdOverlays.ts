@@ -1,6 +1,7 @@
 import type { Time } from 'lightweight-charts';
 import {
   chartTimeAtOrBefore,
+  type CisdGeometryProvider,
   closestIdx,
   type GeometryCandleBar,
   resolveReverseBarIndex,
@@ -198,36 +199,57 @@ type LayoutEntry =
   | {
       kind: 'label-mss';
       el: HTMLDivElement;
-      time: Time;
+      timeSec: number;
       price: number;
       bullish: boolean;
     }
   | {
       kind: 'label-extra';
       el: HTMLDivElement;
-      time: Time;
+      timeSec: number;
       price: number;
       below: boolean;
     }
   | {
       kind: 'box';
       el: HTMLDivElement;
-      t1: Time;
-      t2: Time;
+      t1Sec: number;
+      t2Sec: number;
       pHigh: number;
       pLow: number;
     };
 
-function layoutOverlays(
+/**
+ * Lightweight-charts → CisdGeometryProvider adapter. Engine-specific glue is
+ * confined to this function; the layout pass below is engine-agnostic.
+ */
+function makeLwGeometryProvider(
   chart: CisdLwChartApi,
   series: CisdLwCandleSeriesApi,
-  entries: LayoutEntry[],
-) {
+): CisdGeometryProvider {
   const ts = chart.timeScale();
+  return {
+    timeToCoordinate: (unixSec) => ts.timeToCoordinate(unixSec as unknown as Time),
+    priceToCoordinate: (price) => series.priceToCoordinate(price),
+    subscribeRangeChange: (handler) => {
+      const wrapped = () => handler();
+      ts.subscribeVisibleLogicalRangeChange(wrapped);
+      return () => {
+        try {
+          ts.unsubscribeVisibleLogicalRangeChange(wrapped);
+        } catch {
+          /* ignore */
+        }
+      };
+    },
+  };
+}
+
+function layoutOverlays(geom: CisdGeometryProvider, entries: LayoutEntry[]) {
   for (const e of entries) {
-    if (e.kind === 'label-mss') {
-      const x = ts.timeToCoordinate(e.time);
-      const y = series.priceToCoordinate(e.price);
+    if (e.kind === 'label-mss' || e.kind === 'label-extra') {
+      const x = geom.timeToCoordinate(e.timeSec);
+      const y = geom.priceToCoordinate(e.price);
       if (x == null || y == null) {
         e.el.style.visibility = 'hidden';
         continue;
@@ -237,22 +259,10 @@ function layoutOverlays(
       e.el.style.top = `${y}px`;
       continue;
     }
-    if (e.kind === 'label-extra') {
-      const x = ts.timeToCoordinate(e.time);
-      const y = series.priceToCoordinate(e.price);
-      if (x == null || y == null) {
-        e.el.style.visibility = 'hidden';
-        continue;
-      }
-      e.el.style.visibility = 'visible';
-      e.el.style.left = `${x}px`;
-      e.el.style.top = `${y}px`;
-      continue;
-    }
-    const x1 = ts.timeToCoordinate(e.t1);
-    const x2 = ts.timeToCoordinate(e.t2);
-    const yHi = series.priceToCoordinate(e.pHigh);
-    const yLo = series.priceToCoordinate(e.pLow);
+    const x1 = geom.timeToCoordinate(e.t1Sec);
+    const x2 = geom.timeToCoordinate(e.t2Sec);
+    const yHi = geom.priceToCoordinate(e.pHigh);
+    const yLo = geom.priceToCoordinate(e.pLow);
     if (x1 == null || x2 == null || yHi == null || yLo == null) {
       e.el.style.visibility = 'hidden';
       continue;
@@ -316,7 +326,7 @@ export function drawCisdOverlays(
 
   const layoutEntries: LayoutEntry[] = [];
   let overlayRoot: HTMLDivElement | null = null;
-  let onLogicalRange: ((r: { from: number; to: number } | null) => void) | null = null;
+  let unsubscribeRange: (() => void) | null = null;
   let resizeObs: ResizeObserver | null = null;
 
   if (useHtml) {
@@ -419,8 +429,8 @@ export function drawCisdOverlays(
           layoutEntries.push({
             kind: 'box',
             el,
-            t1: fvgStartTime,
-            t2: breakoutTime,
+            t1Sec: fvgStartTime as number,
+            t2Sec: breakoutTime as number,
             pHigh: fvgHi,
             pLow: fvgLo,
           });
@@ -491,7 +501,7 @@ export function drawCisdOverlays(
       layoutEntries.push({
         kind: 'label-mss',
         el,
-        time: chartData[idx].time,
+        timeSec: chartData[idx].time as number,
         price: priceY,
         bullish,
       });
@@ -517,19 +527,18 @@ export function drawCisdOverlays(
       layoutEntries.push({
         kind: 'label-extra',
         el,
-        time: chartData[idx].time,
+        timeSec: chartData[idx].time as number,
         price: priceY,
         below,
       });
     }
 
-    const runLayout = () => layoutOverlays(chart, candleSeries, layoutEntries);
-    onLogicalRange = () => {
-      requestAnimationFrame(runLayout);
-    };
-    chart.timeScale().subscribeVisibleLogicalRangeChange(onLogicalRange);
+    const geom = makeLwGeometryProvider(chart, candleSeries);
+    const runLayout = () => layoutOverlays(geom, layoutEntries);
+    const fireLayout = () => requestAnimationFrame(runLayout);
+    unsubscribeRange = geom.subscribeRangeChange(fireLayout);
     if (typeof ResizeObserver !== 'undefined') {
-      resizeObs = new ResizeObserver(() => onLogicalRange?.());
+      resizeObs = new ResizeObserver(fireLayout);
       resizeObs.observe(overlayHost!);
     }
     requestAnimationFrame(runLayout);
@@ -595,9 +604,9 @@ export function drawCisdOverlays(
   }
 
   return () => {
-    if (onLogicalRange) {
+    if (unsubscribeRange) {
       try {
-        chart.timeScale().unsubscribeVisibleLogicalRangeChange(onLogicalRange);
+        unsubscribeRange();
       } catch {
         /* ignore */
       }
