@@ -44,8 +44,8 @@ async function bootstrap(): Promise<void> {
   await waitForStoreHydration();
   const persistedUser = useAuthStore.getState().user;
   if (persistedUser) {
-    const ok = await bootstrapAuth();
-    if (ok) {
+    const outcome = await bootstrapAuth();
+    if (outcome.kind === 'ok') {
       // Sync refreshed access token back into the store and re-derive
       // auth flags — `partialize` only rehydrates `user`, so `token`,
       // `isAuthenticated`, and `isAdmin` are null/false after reload
@@ -55,7 +55,19 @@ async function bootstrap(): Promise<void> {
         isAuthenticated: true,
         isAdmin: !!persistedUser.isAdmin,
       });
+    } else if (outcome.kind === 'transient') {
+      // Server is rate-limiting / unreachable. Don't wipe persisted user
+      // — the refresh token is almost certainly still valid; the next
+      // protected API call will retry refresh once the burst window
+      // passes. Restoring the persisted user lets the UI render the
+      // shell instead of bouncing to /login.
+      useAuthStore.setState({
+        token: null,
+        isAuthenticated: true,
+        isAdmin: !!persistedUser.isAdmin,
+      });
     } else {
+      // outcome.kind === 'expired' — refresh token genuinely invalid.
       useAuthStore.setState({
         user: null,
         token: null,

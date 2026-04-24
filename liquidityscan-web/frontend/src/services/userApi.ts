@@ -46,29 +46,24 @@ export function apiBaseUrl(): string {
   return API_BASE_URL;
 }
 
+// Shared refresh logic lives in a Vite-free module so it can be unit
+// tested under ts-jest. See ./auth-refresh for retry/backoff semantics.
+import { attemptRefresh, type RefreshOutcome } from './auth-refresh';
+export type { RefreshOutcome } from './auth-refresh';
+
 /**
  * Silent refresh on app boot. Call before first protected render.
- * Resolves to true if the cookie produced a fresh access token; false if
- * there is no valid session (caller should redirect to /login).
+ *  - 'ok'        — fresh access token cached in memory.
+ *  - 'transient' — leave persisted user state alone; surface a toast and
+ *                  let the next user action retry.
+ *  - 'expired'   — caller should clear auth and redirect to /login.
  */
-export async function bootstrapAuth(): Promise<boolean> {
-  try {
-    const resp = await fetch(`${API_BASE_URL}/auth/refresh`, {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json' },
-      // Empty body — backend reads cookie. Content-Type header is required
-      // so Nest's JSON body parser doesn't treat the body as malformed.
-      body: '{}',
-    });
-    if (!resp.ok) return false;
-    const data = await resp.json();
-    if (!data?.accessToken) return false;
-    inMemoryAccessToken = data.accessToken;
-    return true;
-  } catch {
-    return false;
+export async function bootstrapAuth(): Promise<RefreshOutcome> {
+  const outcome = await attemptRefresh(API_BASE_URL);
+  if (outcome.kind === 'ok') {
+    inMemoryAccessToken = outcome.accessToken;
   }
+  return outcome;
 }
 
 const API_BASE_URL = getApiBaseUrl();
@@ -148,31 +143,22 @@ export interface AdminCoreLayerForceRescanResponse {
 class ApiClient {
   private baseUrl: string;
   private getToken: () => string | null;
-  private refreshInFlight: Promise<{ accessToken: string } | null> | null = null;
+  private refreshInFlight: Promise<RefreshOutcome> | null = null;
+  // Module-level guard so only one rate-limit toast fires per UI session,
+  // even if many concurrent requests all 401 → refresh → 'transient'.
+  private rateLimitToastShown = false;
 
   constructor(baseUrl: string) {
     this.baseUrl = baseUrl;
     this.getToken = () => inMemoryAccessToken;
   }
 
-  private async refreshAccessToken(): Promise<{ accessToken: string } | null> {
+  private async refreshAccessToken(): Promise<RefreshOutcome> {
     if (this.refreshInFlight) return this.refreshInFlight;
 
     this.refreshInFlight = (async () => {
       try {
-        const resp = await fetch(`${this.baseUrl}/auth/refresh`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'Content-Type': 'application/json' },
-          body: '{}',
-        });
-        if (!resp.ok) return null;
-        const data = await resp.json();
-        if (!data?.accessToken) return null;
-        inMemoryAccessToken = data.accessToken;
-        return { accessToken: data.accessToken };
-      } catch {
-        return null;
+        return await attemptRefresh(this.baseUrl);
       } finally {
         this.refreshInFlight = null;
       }
@@ -205,10 +191,34 @@ class ApiClient {
       // Attempt token refresh once on 401
       if (response.status === 401 && !_retried) {
         const refreshed = await this.refreshAccessToken();
-        if (refreshed?.accessToken) {
+        if (refreshed.kind === 'ok') {
           return this.request<T>(endpoint, options, true);
         }
-        // Refresh failed → clear auth to stop repeated 401 spam
+        if (refreshed.kind === 'transient') {
+          // Server is rate-limiting our refresh attempts. The refresh
+          // token is almost certainly still valid — DO NOT log the user
+          // out. Surface a one-shot toast so they understand why this
+          // request bounced, and let them retry.
+          if (!this.rateLimitToastShown) {
+            this.rateLimitToastShown = true;
+            // Reset the guard after 30s so a later real burst still warns.
+            setTimeout(() => { this.rateLimitToastShown = false; }, 30_000);
+            try {
+              const t = await import('react-hot-toast');
+              t.toast.error(
+                'Server is temporarily rate-limiting requests. Please wait a moment and try again.',
+                { duration: 5000 },
+              );
+            } catch {
+              /* react-hot-toast unavailable in non-DOM contexts (tests) */
+            }
+          }
+          const err = new Error('Rate limited — please retry shortly.');
+          (err as any).name = 'RateLimitedError';
+          throw err;
+        }
+        // refreshed.kind === 'expired' — refresh token is genuinely
+        // invalid. Clear auth to stop repeated 401 spam.
         try {
           // Lazy import to avoid circular deps in module init
           const mod = await import('../store/authStore');
