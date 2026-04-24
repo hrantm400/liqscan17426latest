@@ -20,16 +20,29 @@
  */
 import {
   ActionType,
+  IndicatorSeries,
+  LineType,
+  registerIndicator,
   registerOverlay,
   type Chart,
 } from 'klinecharts';
 import type { CisdGeometryProvider } from '../utils/cisdOverlayGeometry';
+import { calculateRSI } from '../utils/rsiDivergence';
 
 /* ────────────── shared color tokens ────────────── */
 
 const FORMING_FILL = 'rgba(156,163,175,0.18)';
 const FORMING_BORDER = 'rgba(156,163,175,0.7)';
 const DAY_SEP_COLOR = 'rgba(156,163,175,0.35)';
+
+const RSI_LINE_COLOR = '#eab308'; // gold/yellow — TradingView convention
+const RSI_LEVEL_30_COLOR = 'rgba(34,197,94,0.4)';
+const RSI_LEVEL_50_COLOR = 'rgba(156,163,175,0.3)';
+const RSI_LEVEL_70_COLOR = 'rgba(239,68,68,0.4)';
+// Default color when extendData.color is unset on a cl-rsi-divergence
+// overlay. Bull green is the safer default — bear color is always passed
+// explicitly from the component when divResult.type === 'bearish'.
+const RSI_BULL_DIV_COLOR = '#089981';
 
 /* ────────────── one-time overlay registration ────────────── */
 
@@ -110,6 +123,105 @@ export function registerExtensions(): void {
           },
         },
       ];
+    },
+  });
+
+  // Wilder RSI 14, drawn in its own pane. The 30/50/70 horizontal levels
+  // are painted via the indicator's `draw` callback (canvas API, full
+  // control). Indicator has no candle-pane scale-merge concern because
+  // its data domain (0-100) belongs to its OWN pane (createIndicator(...,
+  // false, ...) creates a new pane). Compare with PR #16's forming-tint
+  // bug which stacked an indicator on the candle pane.
+  registerIndicator<{ rsi: number }>({
+    name: 'WILDER_RSI',
+    shortName: 'RSI 14',
+    series: IndicatorSeries.Normal,
+    precision: 2,
+    minValue: 0,
+    maxValue: 100,
+    figures: [
+      {
+        key: 'rsi',
+        title: 'RSI: ',
+        type: 'line',
+        // Style: just color + size; the figure `type: 'line'` already
+        // implies a solid stroke. klinecharts' IndicatorFigureStyle
+        // narrows the optional `style` field to enum-mapped strings via
+        // a generic that doesn't accept LineType directly — easier to
+        // omit it than to fight the typing.
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        styles: ((): any => ({
+          color: RSI_LINE_COLOR,
+          size: 2,
+        })),
+      },
+    ],
+    calc: (dataList) => {
+      const closes = dataList.map((d) => d.close);
+      const rsi = calculateRSI(closes, 14);
+      return rsi.map((v) => ({ rsi: Number.isFinite(v) ? v : NaN }));
+    },
+    draw: ({ ctx, bounding, yAxis }) => {
+      ctx.save();
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      const levels: Array<{ value: number; color: string }> = [
+        { value: 30, color: RSI_LEVEL_30_COLOR },
+        { value: 50, color: RSI_LEVEL_50_COLOR },
+        { value: 70, color: RSI_LEVEL_70_COLOR },
+      ];
+      for (const { value, color } of levels) {
+        const y = yAxis.convertToPixel(value);
+        if (!Number.isFinite(y)) continue;
+        ctx.strokeStyle = color;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(bounding.width, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+      // Returning false lets klinecharts render the default RSI line
+      // figure on top of the level lines we just drew.
+      return false;
+    },
+  });
+
+  // RSI divergence trend line + endpoint circles. Used twice per
+  // divergence detection: once on the RSI pane (anchored to RSI values),
+  // once on the candle pane (anchored to price values). Same overlay,
+  // different paneId, different anchor values.
+  registerOverlay({
+    name: 'cl-rsi-divergence',
+    totalStep: 3,
+    needDefaultPointFigure: false,
+    needDefaultXAxisFigure: false,
+    needDefaultYAxisFigure: false,
+    lock: true,
+    createPointFigures: ({ coordinates, overlay }) => {
+      const a = coordinates[0];
+      const b = coordinates[1];
+      if (!a || !b) return [];
+      const ext = (overlay.extendData ?? {}) as { color?: string };
+      const color = ext.color ?? RSI_BULL_DIV_COLOR;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const figs: any[] = [
+        {
+          type: 'line',
+          attrs: { coordinates: [{ x: a.x, y: a.y }, { x: b.x, y: b.y }] },
+          styles: { color, size: 3, style: LineType.Solid },
+        },
+        {
+          type: 'circle',
+          attrs: { x: a.x, y: a.y, r: 4 },
+          styles: { style: 'fill', color },
+        },
+        {
+          type: 'circle',
+          attrs: { x: b.x, y: b.y, r: 4 },
+          styles: { style: 'fill', color },
+        },
+      ];
+      return figs;
     },
   });
 
