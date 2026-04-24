@@ -316,6 +316,13 @@ export function InteractiveLiveChart({
     const maxRetries = 25; // Max ~2.5s (25 * 100ms) — faster fail-open if container has no layout yet
     const retryTimeouts: ReturnType<typeof setTimeout>[] = [];
 
+    // Cleanup that initChart populates once the chart is fully constructed.
+    // The outer effect-return invokes this so resize listeners, _cisdCleanup,
+    // and _tvLabelsCleanup actually run on unmount / dep change. Without this,
+    // toggling fullscreen leaks the overlay root and stacks duplicate CISD
+    // labels (each new chart appends its own root, prior root never removed).
+    let initCleanup: (() => void) | null = null;
+
     const initChart = () => {
       if (!chartContainerRef.current) {
         if (retryCount < maxRetries) {
@@ -557,8 +564,11 @@ export function InteractiveLiveChart({
         if (chartContainerRef.current) ro.observe(chartContainerRef.current);
         if (rsiContainerRef.current) ro.observe(rsiContainerRef.current);
 
-        // Cleanup function
-        return () => {
+        // Cleanup populated AFTER chart construction. Captured here so the
+        // outer effect-return (the only one React actually invokes) can run
+        // it on dep change / unmount. Previously this was `return () => {}`,
+        // which returned the cleanup to the setTimeout caller — i.e. nowhere.
+        initCleanup = () => {
           window.removeEventListener('resize', handleResize);
           try { ro.disconnect(); } catch (e) { /* ignore */ }
           if (chartRef.current) {
@@ -609,17 +619,26 @@ export function InteractiveLiveChart({
     return () => {
       clearTimeout(timeoutId);
       retryTimeouts.forEach((id) => clearTimeout(id));
-      if (chartRef.current) {
-        try { chartRef.current.remove(); } catch (e) { /* ignore */ }
-        chartRef.current = null;
-        candlestickSeriesRef.current = null;
+      if (initCleanup) {
+        // Full cleanup path — chart was constructed and registered overlays /
+        // resize listeners. This calls _cisdCleanup so the overlay root DOM
+        // is removed before the chart is destroyed (fullscreen toggle fix).
+        initCleanup();
+      } else {
+        // initChart never completed (e.g. dep change before setTimeout fired).
+        // Safe minimal teardown.
+        if (chartRef.current) {
+          try { chartRef.current.remove(); } catch (e) { /* ignore */ }
+          chartRef.current = null;
+          candlestickSeriesRef.current = null;
+        }
+        if (rsiChartRef.current) {
+          try { rsiChartRef.current.remove(); } catch (e) { /* ignore */ }
+          rsiChartRef.current = null;
+          rsiSeriesRef.current = null;
+        }
+        setIsInitialized(false);
       }
-      if (rsiChartRef.current) {
-        try { rsiChartRef.current.remove(); } catch (e) { /* ignore */ }
-        rsiChartRef.current = null;
-        rsiSeriesRef.current = null;
-      }
-      setIsInitialized(false);
     };
   }, [height, isFullscreen, theme, isDark, showTradingView]);
 
