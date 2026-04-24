@@ -112,14 +112,26 @@ function buildStyles(isDark: boolean): DeepPartial<Styles> {
       },
     },
     xAxis: {
-      axisLine: { color: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)' },
-      tickLine: { color: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)' },
-      tickText: { color: isDark ? '#9ca3af' : '#475569', size: 11 },
+      axisLine: { color: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)', size: 1 },
+      tickLine: { color: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)', size: 1 },
+      // Bumped from 11 → 12 and light-mode color from #475569 → #4b5563
+      // for readability parity with the LW baseline. `family: inherit`
+      // picks up the app's system font instead of klinecharts' default
+      // sans-serif (which renders thinner on macOS).
+      tickText: {
+        color: isDark ? '#9ca3af' : '#4b5563',
+        size: 12,
+        family: 'inherit',
+      },
     },
     yAxis: {
-      axisLine: { color: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)' },
-      tickLine: { color: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(0,0,0,0.12)' },
-      tickText: { color: isDark ? '#9ca3af' : '#475569', size: 11 },
+      axisLine: { color: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)', size: 1 },
+      tickLine: { color: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)', size: 1 },
+      tickText: {
+        color: isDark ? '#9ca3af' : '#4b5563',
+        size: 12,
+        family: 'inherit',
+      },
     },
     crosshair: {
       horizontal: {
@@ -259,6 +271,13 @@ export function KlineInteractiveLiveChart({
   const overlayIdsRef = useRef<string[]>([]);
   const cisdCleanupRef = useRef<(() => void) | null>(null);
   const lastPriceRef = useRef<number | null>(null);
+  // Refs that drive the applyNewData-vs-updateData decision in the data
+  // effect below. Tracked outside React state because writing them must
+  // not retrigger renders — they're memoization keys for the chart engine
+  // call, not UI state.
+  const dataContextRef = useRef<string>('');
+  const lastBarTsRef = useRef<number>(0);
+  const lastBarCountRef = useRef<number>(0);
   const [showTradingView, setShowTradingView] = useState(false);
 
   // Slice once per render — never push more than MAX_CANDLES into the
@@ -342,6 +361,9 @@ export function KlineInteractiveLiveChart({
       } catch {
         /* ignore */
       }
+      dataContextRef.current = '';
+      lastBarTsRef.current = 0;
+      lastBarCountRef.current = 0;
       return;
     }
 
@@ -363,11 +385,53 @@ export function KlineInteractiveLiveChart({
     }
     overlayIdsRef.current = [];
 
+    // Pan/scroll preservation: klinecharts' applyNewData snaps the visible
+    // range back to the latest bar. Calling it on every live tick (every
+    // few seconds) makes pan/scroll unusable — the chart fights the user.
+    //
+    //   - First mount or symbol/timeframe change → applyNewData (snap is
+    //     expected; the user just navigated to this signal)
+    //   - One new bar appended → updateData(lastBar) — preserves view
+    //   - Last bar OHLC mutated (live tick) → updateData(lastBar)
+    //   - Anything else (count drop, multi-bar resync) → applyNewData,
+    //     accept the snap. Rare in practice.
+    //
+    // Reference: feasibility report Step 2 noted klinecharts' OnVisibleRange
+    // event but didn't flag the applyNewData snap-back behavior because
+    // the Core-Layer mini tile doesn't pan. The full chart does.
+    const newContext = `${symbol}|${timeframe}`;
+    const lastBarTs = klineData[klineData.length - 1].timestamp;
+    const isInitial = dataContextRef.current === '';
+    const isContextChange = dataContextRef.current !== newContext;
+    const isSingleBarAppend =
+      !isContextChange &&
+      !isInitial &&
+      klineData.length === lastBarCountRef.current + 1;
+    const isLastBarMutation =
+      !isContextChange &&
+      !isInitial &&
+      klineData.length === lastBarCountRef.current &&
+      lastBarTs === lastBarTsRef.current;
+
     try {
-      chart.applyNewData(klineData);
+      if (isInitial || isContextChange) {
+        chart.applyNewData(klineData);
+      } else if (isSingleBarAppend || isLastBarMutation) {
+        chart.updateData(klineData[klineData.length - 1]);
+      } else {
+        // Count changed by more than 1, or last bar timestamp went
+        // backwards — full resync is the only safe path. Snap is
+        // acceptable because this branch indicates the upstream candle
+        // source was substantially refreshed (e.g. tab refocus after
+        // long sleep, websocket reconnect with backfill).
+        chart.applyNewData(klineData);
+      }
     } catch {
       /* ignore */
     }
+    dataContextRef.current = newContext;
+    lastBarTsRef.current = lastBarTs;
+    lastBarCountRef.current = klineData.length;
 
     // Notify parent of the latest price so the SignalDetails header price
     // pill stays in sync — same callback shape as InteractiveLiveChart.
