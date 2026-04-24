@@ -4,7 +4,6 @@ import {
   init,
   dispose,
   LineType,
-  registerOverlay,
   TooltipShowRule,
   type Chart,
   type DeepPartial,
@@ -14,6 +13,7 @@ import {
 import { useTheme } from '../../contexts/ThemeContext';
 import { shouldShowDirectionWarning } from '../../core-layer/helpers';
 import { findFormingCandleIdx } from '../../core-layer/chart-forming';
+import { registerExtensions } from '../../core-layer/kline-extensions';
 import { fetchCandles, type ChartCandle } from '../../services/candles';
 import type { CoreLayerVariant, Direction, TF, TFLifeState } from '../../core-layer/types';
 
@@ -44,140 +44,6 @@ const MARKER_COLOR: Record<TFLifeState, string> = {
 const UP_COLOR = '#13ec37';
 const DOWN_COLOR = '#ff4444';
 const WARN_COLOR = '#f97316';
-const FORMING_FILL = 'rgba(156,163,175,0.18)';
-const FORMING_BORDER = 'rgba(156,163,175,0.7)';
-
-/* ────────────── one-time klinecharts extensions ────────────── */
-
-let extensionsRegistered = false;
-
-function registerExtensions(): void {
-  if (extensionsRegistered) return;
-  extensionsRegistered = true;
-
-  // Forming-candle tint: a translucent rect drawn over the in-progress bar's
-  // column. Implemented as an OVERLAY (not an indicator) because indicators
-  // stacked on the candle pane contribute their data values to the pane's
-  // y-axis auto-scale — for tint values 0/1 vs candle prices ~0.02 the
-  // merged scale becomes [0, 1] and squashes the candles to a 2% sliver.
-  // Overlays don't participate in scale calc, so the candle pane keeps its
-  // OHLC range and the tint just paints over the column.
-  registerOverlay({
-    name: 'cl-forming',
-    totalStep: 2,
-    needDefaultPointFigure: false,
-    needDefaultXAxisFigure: false,
-    needDefaultYAxisFigure: false,
-    lock: true,
-    createPointFigures: ({ coordinates, bounding, barSpace }) => {
-      const c = coordinates[0];
-      if (!c) return [];
-      // Use the column-width-with-gap so the tint covers the full bar slot
-      // (body + wicks). barSpace is supplied by the engine on every layout
-      // pass; fall back to a reasonable default if the API ever changes
-      // shape so we don't render a zero-width rect.
-      const colWidth = barSpace?.gapBar ?? 10;
-      return [
-        {
-          type: 'rect',
-          attrs: {
-            x: c.x - colWidth / 2,
-            y: 0,
-            width: colWidth,
-            height: bounding.height,
-          },
-          styles: {
-            style: 'fill',
-            color: FORMING_FILL,
-            borderColor: FORMING_BORDER,
-            borderSize: 1,
-          },
-        },
-      ];
-    },
-  });
-
-  // Day separator: dashed vertical line at one timestamp. Sub-daily TFs only.
-  registerOverlay({
-    name: 'cl-dayline',
-    totalStep: 2,
-    needDefaultPointFigure: false,
-    needDefaultXAxisFigure: false,
-    needDefaultYAxisFigure: false,
-    lock: true,
-    createPointFigures: ({ coordinates, bounding }) => {
-      const c = coordinates[0];
-      if (!c) return [];
-      return [
-        {
-          type: 'line',
-          attrs: {
-            coordinates: [
-              { x: c.x, y: 0 },
-              { x: c.x, y: bounding.height },
-            ],
-          },
-          styles: {
-            style: 'dashed',
-            dashedValue: [3, 3],
-            size: 1,
-            color: 'rgba(156,163,175,0.35)',
-          },
-        },
-      ];
-    },
-  });
-
-  // Signal arrow with optional text. Renders a triangle at the bar's high/low,
-  // colored by life state (or warn-orange when direction-warning fires).
-  registerOverlay({
-    name: 'cl-signal',
-    totalStep: 2,
-    needDefaultPointFigure: false,
-    needDefaultXAxisFigure: false,
-    needDefaultYAxisFigure: false,
-    lock: true,
-    createPointFigures: ({ coordinates, overlay }) => {
-      const c = coordinates[0];
-      if (!c) return [];
-      const ext = (overlay.extendData ?? {}) as {
-        dir?: 'up' | 'down';
-        color?: string;
-        text?: string;
-      };
-      const dir = ext.dir ?? 'up';
-      const color = ext.color ?? '#13ec37';
-      const text = ext.text ?? '';
-      // up arrow appears below the bar pointing up (BUY); down arrow above (SELL).
-      const tipOff = dir === 'up' ? 10 : -10;
-      const baseOff = dir === 'up' ? 18 : -18;
-      const apex = { x: c.x, y: c.y + tipOff };
-      const left = { x: c.x - 6, y: c.y + baseOff };
-      const right = { x: c.x + 6, y: c.y + baseOff };
-      const figs: any[] = [
-        {
-          type: 'polygon',
-          attrs: { coordinates: [apex, left, right] },
-          styles: { style: 'fill', color },
-        },
-      ];
-      if (text) {
-        figs.push({
-          type: 'text',
-          attrs: {
-            x: c.x,
-            y: c.y + (dir === 'up' ? baseOff + 12 : baseOff - 4),
-            text,
-            align: 'center',
-            baseline: dir === 'up' ? 'top' : 'bottom',
-          },
-          styles: { color, size: 10, weight: 'bold' },
-        });
-      }
-      return figs;
-    },
-  });
-}
 
 /* ────────────── component ────────────── */
 
