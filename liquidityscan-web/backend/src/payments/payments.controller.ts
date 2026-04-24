@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Put, Param, Body, Req, UseGuards, BadRequestException, ForbiddenException } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { PaymentsService } from './payments.service';
 import { Network } from '../lib/payments/types';
 import { PrismaService } from '../prisma/prisma.service';
@@ -10,6 +10,13 @@ import { UserThrottlerGuard } from '../common/throttler/user-throttler.guard';
 // legitimate polling client from a shared NAT doesn't starve peers.
 @Controller('payments')
 @UseGuards(UserThrottlerGuard)
+// Skip the global `burst` (5/300s) for every payments route. PaymentWidget
+// polls /payments/status/:id every 15s — that's 20 polls per 5 min from a
+// single legit client, so the burst limit guarantees a 429 storm. The
+// per-route `strict` limits below remain the meaningful guard. This is
+// not an abuse vector: payments routes already sit behind JwtAuthGuard +
+// UserThrottlerGuard which buckets by userId.
+@SkipThrottle({ burst: true })
 export class PaymentsController {
   constructor(
     private paymentsService: PaymentsService,
