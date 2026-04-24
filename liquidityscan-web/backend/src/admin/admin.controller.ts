@@ -68,12 +68,14 @@ export class AdminController {
 
   @Put('users/:id')
   @Throttle({ strict: { limit: 30, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async updateUser(@Param('id') id: string, @Body() data: { name?: string; isAdmin?: boolean; tier?: UserTier; subscriptionStatus?: string; subscriptionExpiresAt?: string }) {
     return this.adminService.updateUser(id, data);
   }
 
   @Put('users/:id/subscription')
   @Throttle({ strict: { limit: 30, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async setUserSubscription(
     @Param('id') id: string,
     @Body() data: { tier: UserTier; expiresAt?: string | null; status?: string },
@@ -83,6 +85,7 @@ export class AdminController {
 
   @Post('users/:id/extend')
   @Throttle({ strict: { limit: 30, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async extendUserSubscription(
     @Param('id') id: string,
     @Body() data: { days: number },
@@ -92,6 +95,7 @@ export class AdminController {
 
   @Delete('users/:id')
   @Throttle({ strict: { limit: 30, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async deleteUser(@Param('id') id: string) {
     return this.adminService.deleteUser(id);
   }
@@ -104,6 +108,7 @@ export class AdminController {
 
   @Post('users/:id/features')
   @Throttle({ strict: { limit: 30, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async grantFeature(
     @Param('id') id: string,
     @Body() data: { feature: string; expiresAt?: string | null },
@@ -114,6 +119,7 @@ export class AdminController {
 
   @Delete('users/:id/features/:feature')
   @Throttle({ strict: { limit: 30, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async revokeFeature(
     @Param('id') id: string,
     @Param('feature') feature: string,
@@ -129,18 +135,21 @@ export class AdminController {
 
   @Post('categories')
   @Throttle({ strict: { limit: 30, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async createCategory(@Body() data: { name: string; slug: string; description?: string; icon?: string; order?: number }) {
     return this.adminService.createCategory(data);
   }
 
   @Put('categories/:id')
   @Throttle({ strict: { limit: 30, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async updateCategory(@Param('id') id: string, @Body() data: { name?: string; slug?: string; description?: string; icon?: string; order?: number }) {
     return this.adminService.updateCategory(id, data);
   }
 
   @Delete('categories/:id')
   @Throttle({ strict: { limit: 30, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async deleteCategory(@Param('id') id: string) {
     return this.adminService.deleteCategory(id);
   }
@@ -172,18 +181,21 @@ export class AdminController {
 
   @Put('payments/:id/confirm')
   @Throttle({ strict: { limit: 20, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async confirmPayment(@Param('id') id: string) {
     return this.adminService.confirmPayment(id);
   }
 
   @Put('payments/:id/cancel')
   @Throttle({ strict: { limit: 20, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async cancelPayment(@Param('id') id: string) {
     return this.adminService.cancelPendingPayment(id);
   }
 
   @Put('payments/:id/refund')
   @Throttle({ strict: { limit: 20, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async refundPayment(@Param('id') id: string) {
     return this.adminService.refundCompletedPayment(id);
   }
@@ -225,12 +237,14 @@ export class AdminController {
 
   @Patch('settings/launch-promo')
   @Throttle({ strict: { limit: 10, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async setLaunchPromo(@Body() data: { enabled: boolean }) {
     return this.adminService.setLaunchPromoFullAccess(Boolean(data?.enabled));
   }
 
   @Patch('settings/cisd-config')
   @Throttle({ strict: { limit: 10, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async setCisdConfig(@Body() data: { cisdPivotLeft: number; cisdPivotRight: number; cisdMinConsecutive: number }) {
     return this.adminService.setCisdConfig(data);
   }
