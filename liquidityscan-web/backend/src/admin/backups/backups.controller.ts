@@ -1,5 +1,5 @@
 import { Controller, Get, UseGuards } from '@nestjs/common';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { AdminGuard } from '../guards/admin.guard';
 import { UserThrottlerGuard } from '../../common/throttler/user-throttler.guard';
 import { BackupsService } from './backups.service';
@@ -14,6 +14,11 @@ import { BackupsService } from './backups.service';
  */
 @Controller('admin/backups')
 @UseGuards(AdminGuard, UserThrottlerGuard)
+// Skip the global `burst: 5/300s`. Both routes are admin polling targets
+// (the health endpoint especially) — neither needs burst-class abuse
+// protection. Per-route `default` limits below stay as the meaningful
+// guard. See PR 3 audit for the broader misconfig context.
+@SkipThrottle({ burst: true })
 export class BackupsController {
   constructor(private readonly backups: BackupsService) {}
 
