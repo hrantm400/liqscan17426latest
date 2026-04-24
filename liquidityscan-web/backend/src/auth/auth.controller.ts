@@ -10,7 +10,7 @@ import {
   Res,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
+import { SkipThrottle, Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { Request, Response, CookieOptions } from 'express';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -61,7 +61,12 @@ export class AuthController {
   @Public()
   @UseGuards(ThrottlerGuard)
   // PR 3.3 — account-creation spam guard (was 10/60s).
+  // Skip the global `burst` (5/300s) — `strict` is the meaningful guard
+  // for this route. Without skipping burst, ThrottlerGuard evaluates ALL
+  // named throttlers and the most restrictive wins, locking interactive
+  // users out after 5 calls in any 5-min window.
   @Throttle({ strict: { limit: 3, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async register(@Body() dto: RegisterDto, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.register(dto);
     this.setRefreshCookie(res, result.refreshToken);
@@ -74,6 +79,7 @@ export class AuthController {
   // PR 3.3 — credential brute-force guard (was 15/60s). Matches
   // GitHub/Google-class limits.
   @Throttle({ strict: { limit: 5, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async login(@Body() dto: LoginDto, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.login(dto);
     this.setRefreshCookie(res, result.refreshToken);
@@ -86,7 +92,12 @@ export class AuthController {
   // PR 3.3 — relaxed from 30/60s after PR 3.1 cut access-token TTL to 1h.
   // 60/60s covers ~60 concurrent browser tabs silent-refreshing from
   // the same IP without bumping into the limit.
+  // Must skip `burst` (5/300s): bootstrapAuth fires once per page load,
+  // so a tester reloading 5+ times in 5 min would lock themselves out
+  // of the entire app and the frontend would mistreat the 429 as
+  // session-expired → infinite login loop.
   @Throttle({ strict: { limit: 60, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async refresh(
     @Req() req: Request,
     @Body('refreshToken') bodyToken: string | undefined,
@@ -105,6 +116,7 @@ export class AuthController {
   @Public()
   @UseGuards(ThrottlerGuard)
   @Throttle({ strict: { limit: 20, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   @HttpCode(204)
   async logout(
     @Req() req: Request,
@@ -121,6 +133,7 @@ export class AuthController {
   @UseGuards(ThrottlerGuard)
   // PR 3.3 — OAuth brute-force / replay guard (was 20/60s).
   @Throttle({ strict: { limit: 10, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async googleOneTap(
     @Body('credential') credential: string,
     @Res({ passthrough: true }) res: Response,
@@ -136,6 +149,7 @@ export class AuthController {
   @UseGuards(ThrottlerGuard)
   // PR 3.3 — one-time code exchange replay guard (was 25/60s).
   @Throttle({ strict: { limit: 10, ttl: 60000 } })
+  @SkipThrottle({ burst: true })
   async oauthExchange(@Body() dto: OAuthExchangeDto, @Res({ passthrough: true }) res: Response) {
     const result = await this.authService.exchangeOAuthCode(dto.code);
     this.setRefreshCookie(res, result.refreshToken);
