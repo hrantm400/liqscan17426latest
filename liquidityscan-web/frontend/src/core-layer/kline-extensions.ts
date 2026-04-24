@@ -137,8 +137,13 @@ export function registerExtensions(): void {
     shortName: 'RSI 14',
     series: IndicatorSeries.Normal,
     precision: 2,
-    minValue: 0,
-    maxValue: 100,
+    // 20-80 zoom matches the LW chart's visible y-range. The 30/50/70
+    // levels stay inside this window, and the actual RSI line clips
+    // gracefully when it extends to extremes (which is rare for RSI 14
+    // and rarer still mid-screen — most divergences live in the 25-75
+    // zone where this zoom is exactly right).
+    minValue: 20,
+    maxValue: 80,
     figures: [
       {
         key: 'rsi',
@@ -186,10 +191,18 @@ export function registerExtensions(): void {
     },
   });
 
-  // RSI divergence trend line + endpoint circles. Used twice per
-  // divergence detection: once on the RSI pane (anchored to RSI values),
-  // once on the candle pane (anchored to price values). Same overlay,
-  // different paneId, different anchor values.
+  // RSI divergence trend line + endpoint circles + endpoint text labels.
+  // Used twice per divergence detection: once on the RSI pane (anchored
+  // to RSI values), once on the candle pane (anchored to price values).
+  // Same overlay, different paneId, different anchor values.
+  //
+  // extendData carries:
+  //   color    — line + circle + text fill (#089981 bull / #F23645 bear)
+  //   labelA   — text below/above point A (default 'Pivot 1')
+  //   labelB   — text below/above point B (default 'Pivot 2')
+  //   pointer  — 'up' or 'down'; controls which side of the circle the
+  //              text label sits on. Match LW's belowBar (bull) /
+  //              aboveBar (bear) convention.
   registerOverlay({
     name: 'cl-rsi-divergence',
     totalStep: 3,
@@ -201,8 +214,20 @@ export function registerExtensions(): void {
       const a = coordinates[0];
       const b = coordinates[1];
       if (!a || !b) return [];
-      const ext = (overlay.extendData ?? {}) as { color?: string };
+      const ext = (overlay.extendData ?? {}) as {
+        color?: string;
+        labelA?: string;
+        labelB?: string;
+        pointer?: 'up' | 'down';
+      };
       const color = ext.color ?? RSI_BULL_DIV_COLOR;
+      const labelA = ext.labelA ?? 'Pivot 1';
+      const labelB = ext.labelB ?? 'Pivot 2';
+      const pointer = ext.pointer ?? 'up';
+      // pointer 'up' = labels sit BELOW circles (bullish — pivots are at
+      // lows). pointer 'down' = ABOVE (bearish — pivots are at highs).
+      const labelDy = pointer === 'up' ? 14 : -10;
+      const labelBaseline = pointer === 'up' ? 'top' : 'bottom';
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const figs: any[] = [
         {
@@ -212,13 +237,35 @@ export function registerExtensions(): void {
         },
         {
           type: 'circle',
-          attrs: { x: a.x, y: a.y, r: 4 },
+          attrs: { x: a.x, y: a.y, r: 5 },
           styles: { style: 'fill', color },
         },
         {
           type: 'circle',
-          attrs: { x: b.x, y: b.y, r: 4 },
+          attrs: { x: b.x, y: b.y, r: 5 },
           styles: { style: 'fill', color },
+        },
+        {
+          type: 'text',
+          attrs: {
+            x: a.x,
+            y: a.y + labelDy,
+            text: labelA,
+            align: 'center',
+            baseline: labelBaseline,
+          },
+          styles: { color, size: 11, weight: 'bold' },
+        },
+        {
+          type: 'text',
+          attrs: {
+            x: b.x,
+            y: b.y + labelDy,
+            text: labelB,
+            align: 'center',
+            baseline: labelBaseline,
+          },
+          styles: { color, size: 11, weight: 'bold' },
         },
       ];
       return figs;
