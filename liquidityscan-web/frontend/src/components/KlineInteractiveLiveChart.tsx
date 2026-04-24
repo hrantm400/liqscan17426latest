@@ -18,6 +18,8 @@ import {
 } from '../utils/drawCisdOverlays';
 import { makeKlineCisdAdapter } from '../utils/klineCisdAdapter';
 import { registerExtensions } from '../core-layer/kline-extensions';
+import { isRsiDivergenceSignalId } from '../utils/rsiStrategy';
+import { calculateRSI, detectLastDivergence } from '../utils/rsiDivergence';
 // Local Candle / Signal types match the LOOSE shapes declared inline in
 // InteractiveLiveChart.tsx (lines 182, 209). Mirroring them locally lets
 // `InteractiveLiveChartGate` pass props through without coercion — the
@@ -278,7 +280,13 @@ export function KlineInteractiveLiveChart({
   const dataContextRef = useRef<string>('');
   const lastBarTsRef = useRef<number>(0);
   const lastBarCountRef = useRef<number>(0);
+  // RSI sub-pane id, populated by createIndicator when isRsi is true and
+  // cleared by removeIndicator when it flips to false (e.g. user nav from
+  // an RSI signal to a CISD signal without remounting the chart).
+  const rsiPaneIdRef = useRef<string | null>(null);
   const [showTradingView, setShowTradingView] = useState(false);
+
+  const isRsi = isRsiDivergenceSignalId(signal?.id);
 
   // Slice once per render — never push more than MAX_CANDLES into the
   // engine. Memoize the KLineData shape too so applyNewData isn't called
@@ -350,6 +358,49 @@ export function KlineInteractiveLiveChart({
   useEffect(() => {
     chartRef.current?.setStyles(buildStyles(isDark));
   }, [isDark]);
+
+  // RSI pane lifecycle. Adds the WILDER_RSI indicator in its own pane
+  // when the active signal is RSI-divergence-based; removes it when the
+  // signal changes to something else. Pane id is captured so the data
+  // effect can anchor divergence overlays to it.
+  //
+  // Why a separate effect: the data effect re-runs on every candle tick;
+  // we DON'T want to add/remove the indicator on every tick. This effect
+  // depends only on `isRsi` and the chart instance — it fires once when
+  // the user lands on an RSI signal and never again until they navigate
+  // away.
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || showTradingView) return;
+    if (!isRsi) {
+      if (rsiPaneIdRef.current) {
+        try {
+          chart.removeIndicator(rsiPaneIdRef.current, 'WILDER_RSI');
+        } catch {
+          /* ignore */
+        }
+        rsiPaneIdRef.current = null;
+      }
+      return;
+    }
+    if (rsiPaneIdRef.current) return; // already mounted
+    const paneId = chart.createIndicator(
+      'WILDER_RSI',
+      false, // false = create a new pane below; do NOT stack on candle pane
+      { height: isFullscreen ? 200 : 180 },
+    );
+    rsiPaneIdRef.current = typeof paneId === 'string' ? paneId : null;
+    return () => {
+      if (rsiPaneIdRef.current && chartRef.current) {
+        try {
+          chartRef.current.removeIndicator(rsiPaneIdRef.current, 'WILDER_RSI');
+        } catch {
+          /* ignore */
+        }
+      }
+      rsiPaneIdRef.current = null;
+    };
+  }, [isRsi, isFullscreen, showTradingView]);
 
   // Data + overlays update.
   useEffect(() => {
@@ -585,12 +636,83 @@ export function KlineInteractiveLiveChart({
         seg(seLines.tp3, SE_TP3_COLOR, { style: LineType.Solid }, 2);
       }
     }
+
+    // RSI divergence trend lines. Mirrors the LW chart's behavior: when
+    // the active signal is RSI-divergence-based AND we have enough data,
+    // detect the LAST regular divergence and draw two parallel lines —
+    // one across the RSI pane (between RSI-value pivots), one across the
+    // candle pane (between price pivots). Identical color, identical
+    // overlay shape (line + 2 endpoint circles).
+    if (isRsi && slicedCandles.length > 30) {
+      const closes = slicedCandles.map((c) => c.close);
+      const rsiVals = calculateRSI(closes, 14);
+      const divResult = detectLastDivergence(
+        slicedCandles.map((c) => ({
+          high: c.high,
+          low: c.low,
+          close: c.close,
+          openTime:
+            c.openTime instanceof Date ? c.openTime.toISOString() : c.openTime,
+        })),
+        rsiVals,
+        signal.signalType,
+        typeof (signal.metadata as Record<string, unknown> | undefined)
+          ?.divergenceType === 'string'
+          ? ((signal.metadata as Record<string, unknown>)
+              .divergenceType as string)
+          : '',
+      );
+      if (divResult) {
+        const isBullish = divResult.type === 'bullish';
+        const color = isBullish ? '#089981' : '#F23645';
+        const prevTs = new Date(
+          slicedCandles[divResult.prevPivotIdx].openTime,
+        ).getTime();
+        const currTs = new Date(
+          slicedCandles[divResult.currPivotIdx].openTime,
+        ).getTime();
+
+        // (a) Price-pane divergence line — anchored to candle_pane,
+        // connecting the two PRICE pivots.
+        const priceLineId = chart.createOverlay({
+          name: 'cl-rsi-divergence',
+          points: [
+            { timestamp: prevTs, value: divResult.prevPivotPrice },
+            { timestamp: currTs, value: divResult.currPivotPrice },
+          ],
+          extendData: { color },
+        });
+        if (typeof priceLineId === 'string' && priceLineId) {
+          overlayIdsRef.current.push(priceLineId);
+        }
+
+        // (b) RSI-pane divergence line — same overlay shape, anchored to
+        // the RSI pane via paneId, connecting the two RSI VALUE pivots.
+        if (rsiPaneIdRef.current) {
+          const rsiLineId = chart.createOverlay(
+            {
+              name: 'cl-rsi-divergence',
+              points: [
+                { timestamp: prevTs, value: divResult.prevPivotRsi },
+                { timestamp: currTs, value: divResult.currPivotRsi },
+              ],
+              extendData: { color },
+            },
+            rsiPaneIdRef.current,
+          );
+          if (typeof rsiLineId === 'string' && rsiLineId) {
+            overlayIdsRef.current.push(rsiLineId);
+          }
+        }
+      }
+    }
   }, [
     klineData,
     slicedCandles,
     signal,
     relatedSignals,
     symbol,
+    isRsi,
     timeframe,
     showTradingView,
     onPriceUpdate,

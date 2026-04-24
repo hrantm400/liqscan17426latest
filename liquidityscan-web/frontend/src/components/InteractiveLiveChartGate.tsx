@@ -1,7 +1,6 @@
 import { type ComponentProps } from 'react';
 import { InteractiveLiveChart } from './InteractiveLiveChart';
 import { KlineInteractiveLiveChart } from './KlineInteractiveLiveChart';
-import { isRsiDivergenceSignalId } from '../utils/rsiStrategy';
 
 export type InteractiveLiveChartGateProps = ComponentProps<typeof InteractiveLiveChart>;
 
@@ -12,8 +11,10 @@ export type InteractiveLiveChartGateProps = ComponentProps<typeof InteractiveLiv
  * the chart-library migration. Anyone without the flag sees zero behavior
  * change.
  *
- * RSI-divergence signals always fall back to LW regardless of the flag —
- * the kline path doesn't yet implement the RSI sub-pane (Chunk #5).
+ * Chunk #5 (PR #20): RSI-divergence signals now route to klinecharts too
+ * — the kline path implements the RSI sub-pane via createIndicator +
+ * cl-rsi-divergence overlay (see KlineInteractiveLiveChart). Previously
+ * they fell back to LW unconditionally; that branch is gone.
  */
 function useChartEngine(): 'lw' | 'kline' {
   if (typeof window === 'undefined') return 'lw';
@@ -23,14 +24,13 @@ function useChartEngine(): 'lw' | 'kline' {
 
 /**
  * Native chart gate. Dispatches to the right engine implementation based
- * on URL flag + signal kind. The two implementations share the exact prop
- * surface (InteractiveLiveChartGateProps), so the parent component is
- * unaware of which engine is rendering.
+ * on URL flag. The two implementations share the exact prop surface
+ * (InteractiveLiveChartGateProps), so the parent component is unaware of
+ * which engine is rendering.
  */
 export function InteractiveLiveChartGate(props: InteractiveLiveChartGateProps) {
   const engine = useChartEngine();
-  const isRsi = isRsiDivergenceSignalId(props.signal?.id);
-  if (engine === 'kline' && !isRsi) {
+  if (engine === 'kline') {
     return <KlineInteractiveLiveChart {...props} />;
   }
   return <InteractiveLiveChart {...props} />;
