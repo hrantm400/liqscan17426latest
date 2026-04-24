@@ -1,12 +1,25 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { CoreLayerChart } from './CoreLayerChart';
+import { KlineCoreLayerChart } from './KlineCoreLayerChart';
 import { LifeStatePill } from './LifeStatePill';
 import { TradingViewWidget } from '../TradingViewWidget';
 import { useTheme } from '../../contexts/ThemeContext';
 import { computeBreathingPhase } from '../../core-layer/helpers';
 import { MOCK_NOW } from '../../core-layer/constants';
 import type { CoreLayerSignal, TF, TFLifeState } from '../../core-layer/types';
+
+/**
+ * Read the chart-engine flag from the URL once at render. Default engine is
+ * lightweight-charts (CoreLayerChart). When the URL carries `?engine=kline`,
+ * mount KlineCoreLayerChart instead — opt-in PoC for the chart-library
+ * migration. Anyone without the flag sees zero behavior change.
+ */
+function useChartEngine(): 'lw' | 'kline' {
+  if (typeof window === 'undefined') return 'lw';
+  const v = new URLSearchParams(window.location.search).get('engine');
+  return v === 'kline' ? 'kline' : 'lw';
+}
 
 interface Props {
   signal: CoreLayerSignal;
@@ -55,6 +68,7 @@ export const CoreLayerChartTile: React.FC<Props> = ({
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [showTradingView, setShowTradingView] = useState(false);
+  const engine = useChartEngine();
 
   return (
     <div
@@ -125,6 +139,17 @@ export const CoreLayerChartTile: React.FC<Props> = ({
             interval={tvInterval(tf)}
             theme={isDark ? 'dark' : 'light'}
             height="100%"
+          />
+        ) : engine === 'kline' ? (
+          <KlineCoreLayerChart
+            pair={signal.pair}
+            tf={tf}
+            direction={signal.direction}
+            variant={signal.variant}
+            signalCloseMs={signal.tfLastCandleClose[tf] ?? null}
+            candleCount={candleCount}
+            lifeState={state}
+            breathingPhase={phase}
           />
         ) : (
           <CoreLayerChart
