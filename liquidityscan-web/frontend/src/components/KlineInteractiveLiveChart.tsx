@@ -678,7 +678,7 @@ export function KlineInteractiveLiveChart({
         // klinecharts' default-pane behavior with multi-pane charts can
         // be unpredictable (sometimes the most recently created pane
         // wins). Explicit 'candle_pane' is the safe path.
-        const priceLineId = chart.createOverlay(
+        const priceLineIdRaw = chart.createOverlay(
           {
             name: 'cl-rsi-divergence',
             points: [
@@ -689,7 +689,11 @@ export function KlineInteractiveLiveChart({
           },
           'candle_pane',
         );
-        if (typeof priceLineId === 'string' && priceLineId) {
+        const priceLineId =
+          typeof priceLineIdRaw === 'string' && priceLineIdRaw
+            ? priceLineIdRaw
+            : null;
+        if (priceLineId) {
           overlayIdsRef.current.push(priceLineId);
         } else if (typeof console !== 'undefined') {
           console.warn(
@@ -699,8 +703,9 @@ export function KlineInteractiveLiveChart({
 
         // (b) RSI-pane divergence line — same overlay shape, anchored to
         // the RSI pane via paneId, connecting the two RSI VALUE pivots.
+        let rsiLineId: string | null = null;
         if (rsiPaneIdRef.current) {
-          const rsiLineId = chart.createOverlay(
+          const rsiLineIdRaw = chart.createOverlay(
             {
               name: 'cl-rsi-divergence',
               points: [
@@ -711,7 +716,11 @@ export function KlineInteractiveLiveChart({
             },
             rsiPaneIdRef.current,
           );
-          if (typeof rsiLineId === 'string' && rsiLineId) {
+          rsiLineId =
+            typeof rsiLineIdRaw === 'string' && rsiLineIdRaw
+              ? rsiLineIdRaw
+              : null;
+          if (rsiLineId) {
             overlayIdsRef.current.push(rsiLineId);
           } else if (typeof console !== 'undefined') {
             console.warn(
@@ -723,6 +732,28 @@ export function KlineInteractiveLiveChart({
           console.warn(
             '[KlineInteractiveLiveChart] RSI pane id not yet captured — divergence on RSI pane skipped',
           );
+        }
+
+        // PR #21 diagnostic — overlays are created but not visible. Log
+        // the full divergence + id state so we can correlate against the
+        // [cl-rsi-divergence] createPointFigures logs from the overlay
+        // itself. Remove once root cause is identified.
+        if (typeof console !== 'undefined') {
+          console.log('[KlineInteractiveLiveChart] divergence detected:', {
+            type: divResult.type,
+            prevPivotIdx: divResult.prevPivotIdx,
+            currPivotIdx: divResult.currPivotIdx,
+            candleCount: slicedCandles.length,
+            prevTs,
+            currTs,
+            prevPivotPrice: divResult.prevPivotPrice,
+            currPivotPrice: divResult.currPivotPrice,
+            prevPivotRsi: divResult.prevPivotRsi,
+            currPivotRsi: divResult.currPivotRsi,
+            priceLineId,
+            rsiLineId,
+            rsiPaneId: rsiPaneIdRef.current,
+          });
         }
       } else if (typeof console !== 'undefined') {
         console.warn(
