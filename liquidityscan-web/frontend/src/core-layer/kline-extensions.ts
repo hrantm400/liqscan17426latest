@@ -210,26 +210,9 @@ export function registerExtensions(): void {
     needDefaultXAxisFigure: false,
     needDefaultYAxisFigure: false,
     lock: true,
-    createPointFigures: ({ coordinates, overlay, bounding }) => {
+    createPointFigures: ({ coordinates, overlay }) => {
       const a = coordinates[0];
       const b = coordinates[1];
-      // PR #21 diagnostic — overlays are reported as created (createOverlay
-      // returns a string id) but are not visible. Log every render attempt
-      // so we can confirm klinecharts is actually invoking this callback,
-      // and inspect the coordinates + paneId it routes the overlay to.
-      // Remove once root cause is identified.
-      if (typeof console !== 'undefined') {
-        console.log('[cl-rsi-divergence] createPointFigures:', {
-          a,
-          b,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          paneId: (overlay as any).paneId,
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          overlayId: (overlay as any).id,
-          boundingWidth: bounding?.width,
-          boundingHeight: bounding?.height,
-        });
-      }
       if (!a || !b) return [];
       const ext = (overlay.extendData ?? {}) as {
         color?: string;

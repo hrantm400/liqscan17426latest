@@ -734,27 +734,6 @@ export function KlineInteractiveLiveChart({
           );
         }
 
-        // PR #21 diagnostic — overlays are created but not visible. Log
-        // the full divergence + id state so we can correlate against the
-        // [cl-rsi-divergence] createPointFigures logs from the overlay
-        // itself. Remove once root cause is identified.
-        if (typeof console !== 'undefined') {
-          console.log('[KlineInteractiveLiveChart] divergence detected:', {
-            type: divResult.type,
-            prevPivotIdx: divResult.prevPivotIdx,
-            currPivotIdx: divResult.currPivotIdx,
-            candleCount: slicedCandles.length,
-            prevTs,
-            currTs,
-            prevPivotPrice: divResult.prevPivotPrice,
-            currPivotPrice: divResult.currPivotPrice,
-            prevPivotRsi: divResult.prevPivotRsi,
-            currPivotRsi: divResult.currPivotRsi,
-            priceLineId,
-            rsiLineId,
-            rsiPaneId: rsiPaneIdRef.current,
-          });
-        }
       } else if (typeof console !== 'undefined') {
         console.warn(
           '[KlineInteractiveLiveChart] detectLastDivergence returned null',
