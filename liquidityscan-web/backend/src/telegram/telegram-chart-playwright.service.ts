@@ -138,7 +138,7 @@ export class TelegramChartPlaywrightService implements OnModuleDestroy {
                     // text directly above/below the triangle.
                     KC.registerOverlay({
                         name: 'tg-signal-arrow',
-                        totalStep: 2,
+                        totalStep: 1,
                         needDefaultPointFigure: false,
                         needDefaultXAxisFigure: false,
                         needDefaultYAxisFigure: false,
@@ -173,7 +173,24 @@ export class TelegramChartPlaywrightService implements OnModuleDestroy {
                                         align: 'center',
                                         baseline: isUp ? 'top' : 'bottom',
                                     },
-                                    styles: { color: ext.color, size: 12, weight: 'bold', family: 'sans-serif' },
+                                    // klinecharts default text figure styles include
+                                    // backgroundColor + borderSize:1 + padding:4 — that
+                                    // would render a filled blue pill behind every
+                                    // label. Explicit overrides strip all of it so the
+                                    // text floats on the dark canvas, matching LW's
+                                    // bare arrow-marker text.
+                                    styles: {
+                                        color: ext.color,
+                                        size: 12,
+                                        weight: 'bold',
+                                        family: 'sans-serif',
+                                        backgroundColor: 'transparent',
+                                        borderSize: 0,
+                                        paddingLeft: 0,
+                                        paddingRight: 0,
+                                        paddingTop: 0,
+                                        paddingBottom: 0,
+                                    },
                                 },
                             ];
                         },
@@ -198,8 +215,14 @@ export class TelegramChartPlaywrightService implements OnModuleDestroy {
                                     noChangeWickColor: '#089981',
                                 },
                                 tooltip: { showRule: 'none' },
+                                // Telegram surface is a static glance card — the
+                                // last-price badge on the right axis collides with
+                                // the signal-arrow label anchored at the rightmost
+                                // bar (both end up at ~last close). Frontend keeps
+                                // this badge enabled for hover/scroll context;
+                                // here we restore LW-baseline parity by hiding it.
                                 priceMark: {
-                                    last: { show: true },
+                                    last: { show: false },
                                     high: { show: false },
                                     low: { show: false },
                                 },
@@ -220,7 +243,11 @@ export class TelegramChartPlaywrightService implements OnModuleDestroy {
                     const st = String(sig.signalType || '');
                     const isBuy = st.includes('BUY');
                     const last = bars[bars.length - 1];
-                    const label = (st || (isBuy ? 'BUY' : 'SELL')).slice(0, 24);
+                    // Glance-readable label only — the full strategyType + signalType
+                    // string is already in the Telegram caption text below the image.
+                    // Long labels rendered cramped/illegible in headless Chromium;
+                    // BUY/SELL stays sharp at any size.
+                    const label = isBuy ? 'BUY' : 'SELL';
                     // anchor at low for buy (arrow points up from below the
                     // bar), high for sell (arrow points down from above)
                     const anchor = isBuy ? last.low : last.high;
