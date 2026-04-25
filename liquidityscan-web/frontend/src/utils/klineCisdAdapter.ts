@@ -35,7 +35,8 @@
  *     drop. (drawCisdOverlays already gated its setMarkers call inside
  *     try/catch + a useHtml branch — see lines 537/616 of that file.)
  */
-import type { Time } from 'lightweight-charts';
+// Time = unix seconds (legacy LW shape, kept as plain number).
+type Time = number;
 import { ActionType, LineType, type Chart } from 'klinecharts';
 import type {
   CisdLwCandleSeriesApi,
@@ -185,9 +186,9 @@ function makeSeriesApi(chart: Chart, paneId: string): CisdLwCandleSeriesApi {
       }
     },
     // No-op. CISD's setMarkers usage is for the "Retest Zone" extra
-    // marker, which on the kline path is rendered via the `cl-signal`
-    // overlay system (see KlineInteractiveLiveChart). Calling LW's
-    // marker API here would do nothing useful and might log noise.
+    // marker, which is rendered via the `cl-signal` overlay system
+    // (see InteractiveLiveChart). The legacy LW marker API has no
+    // klinecharts equivalent and would just log noise.
     setMarkers: () => undefined,
   };
 }

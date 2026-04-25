@@ -1,47 +1,21 @@
 import React, { useEffect, useMemo, useRef } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { createChart, ColorType, type Time } from 'lightweight-charts';
+import {
+  init,
+  dispose,
+  LineType,
+  TooltipShowRule,
+  type Chart,
+  type DeepPartial,
+  type KLineData,
+  type Styles,
+} from 'klinecharts';
 import { useTheme } from '../../contexts/ThemeContext';
 import { shouldShowDirectionWarning } from '../../core-layer/helpers';
-import { findFormingCandleIdx, FORMING_CANDLE_STYLE } from '../../core-layer/chart-forming';
+import { findFormingCandleIdx } from '../../core-layer/chart-forming';
+import { registerExtensions } from '../../core-layer/kline-extensions';
 import { fetchCandles, type ChartCandle } from '../../services/candles';
 import type { CoreLayerVariant, Direction, TF, TFLifeState } from '../../core-layer/types';
-
-interface CoreLayerChartProps {
-  pair: string;
-  tf: TF;
-  direction: Direction;
-  /**
-   * Chain variant. Drives the per-variant direction-warning rule on the
-   * signal bar: SE requires a directionally-matching close, CRT/BIAS do
-   * not (both can legitimately fire on either candle color).
-   */
-  variant: CoreLayerVariant;
-  /**
-   * Close-time of the signal candle on this TF (epoch ms) — the last
-   * aligned candle that Core-Layer considers definitive on this TF.
-   * Used to pin a highlight marker on the matching bar.
-   */
-  signalCloseMs?: number | null;
-  /**
-   * Life state for the marker color: `fresh` → green, `breathing` → amber,
-   * `steady` → muted gray. Also drives the signal-candle's position inside
-   * the 15-bar window so the viewer can always see post-signal continuation.
-   */
-  lifeState?: TFLifeState;
-  /**
-   * Breathing sub-phase (1 or 2). Null when not breathing. Used alongside
-   * `lifeState` to shift the signal candle one bar further from the right
-   * edge as the signal ages.
-   */
-  breathingPhase?: 1 | 2 | null;
-  /**
-   * Max candles fetched. The chart keeps a 15-bar window and positions the
-   * signal inside it based on `lifeState` (see §14 of the spec).
-   */
-  candleCount?: number;
-  className?: string;
-}
 
 const TF_TO_INTERVAL: Record<TF, string> = {
   W: '1w',
@@ -69,43 +43,36 @@ const MARKER_COLOR: Record<TFLifeState, string> = {
 
 const UP_COLOR = '#13ec37';
 const DOWN_COLOR = '#ff4444';
-// Warning tint used when the signal candle's close contradicts the chain's
-// declared direction *for a variant whose pattern requires a matching close*.
-// SE only — CRT and BIAS permit either body color on the signal bar.
 const WARN_COLOR = '#f97316';
 
-/**
- * Target index for the signal candle inside the 15-bar window (0-indexed,
- * where 14 = rightmost). Values track spec §14's recommendation so the
- * viewer sees more post-signal continuation as a signal ages.
- */
+/* ────────────── component ────────────── */
+
+interface CoreLayerChartProps {
+  pair: string;
+  tf: TF;
+  direction: Direction;
+  variant: CoreLayerVariant;
+  signalCloseMs?: number | null;
+  lifeState?: TFLifeState;
+  breathingPhase?: 1 | 2 | null;
+  candleCount?: number;
+  className?: string;
+}
+
 function pickSignalPosition(
   lifeState: TFLifeState,
   breathingPhase: 1 | 2 | null,
 ): number {
   if (lifeState === 'fresh') return 14;
   if (lifeState === 'breathing') return breathingPhase === 2 ? 12 : 13;
-  return 12; // steady (and HTF-overridden W/1D)
+  return 12;
 }
 
 /**
- * Interactive candlestick mini-chart for Core-Layer pair-detail tiles,
- * built on `lightweight-charts` (same engine as the full InteractiveLiveChart
- * on SignalDetails) but scoped to ~15 bars for a compact at-a-glance view.
- *
- * Behaviour:
- *  - Fetches 30 recent real candles via `fetchCandles(pair, TF→interval)`,
- *    cached per (pair, tf) by TanStack Query.
- *  - Renders the 7-before / signal / ~7-after window centered on the
- *    signal candle (or the last 15 candles when no signal is identified).
- *  - User can pan (drag) and zoom (wheel / pinch) within the fetched
- *    window. Auto-resizes to its flex-sized container.
- *  - A colored arrow marker is pinned on the signal candle, colored by
- *    life-state; signal candle itself uses `direction` color (BUY green,
- *    SELL red) versus the muted up/down for context candles.
- *
- * No overlays (no entry / SL / TP) per ADR D6 — Core-Layer is not a trade
- * signal, just an alignment surface.
+ * Mini klinecharts candle tile rendered inside each `CoreLayerChartTile`
+ * — one per timeframe in the pair-detail responsive grid. Renders the
+ * highlighted signal candle plus a few bars of context, with theme +
+ * lifestate-driven coloring.
  */
 export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
   pair,
@@ -149,15 +116,6 @@ export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
       }
     }
 
-    // Spec §14 — 15-bar window with the signal candle positioned by life state
-    // so post-signal continuation is always visible in proportion to how fresh
-    // the signal is:
-    //   fresh                → position 14 (rightmost, 0 post-candles)
-    //   breathing phase 1/2  → position 13 (1 post-candle)
-    //   breathing phase 2/2  → position 12 (2 post-candles)
-    //   steady               → position 12 (2 post-candles, continuation context)
-    // HTF override: W and 1D render life-state = 'steady' per spec §7, so they
-    // naturally fall into the 2-post-candle layout.
     const WINDOW = 15;
     const targetPos = pickSignalPosition(lifeState, breathingPhase);
     let start: number;
@@ -172,15 +130,12 @@ export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
     }
     const slice = raw.slice(start, end);
     const sigInSlice = sig >= 0 ? sig - start : -1;
-    // Forming-candle detection runs against the slice the user actually sees.
-    // When breathing-2/2 or steady, the window includes 2 candles past the
-    // signal; the rightmost of those is often the still-forming candle.
     const formingInSlice = findFormingCandleIdx(slice, intervalMs, Date.now());
     return { windowCandles: slice, signalIdx: sigInSlice, formingIdx: formingInSlice };
   }, [query.data, signalCloseMs, tf, lifeState, breathingPhase]);
 
   return (
-    <ChartBody
+    <KlineChartBody
       candles={windowCandles}
       signalIdx={signalIdx}
       formingIdx={formingIdx}
@@ -195,10 +150,9 @@ export const CoreLayerChart: React.FC<CoreLayerChartProps> = ({
   );
 };
 
-interface ChartBodyProps {
+interface KlineChartBodyProps {
   candles: ChartCandle[];
   signalIdx: number;
-  /** Index in `candles` of the still-forming bar, or -1. Rendered with FORMING_CANDLE_STYLE. */
   formingIdx: number;
   isDark: boolean;
   variant: CoreLayerVariant;
@@ -206,11 +160,67 @@ interface ChartBodyProps {
   markerColor: string;
   loading: boolean;
   className: string;
-  /** Drives the UTC-midnight day separator overlay. W and 1D skip the overlay entirely. */
   tf: TF;
 }
 
-const ChartBody: React.FC<ChartBodyProps> = ({
+function buildStyles(isDark: boolean): DeepPartial<Styles> {
+  return {
+    candle: {
+      bar: {
+        upColor: UP_COLOR,
+        downColor: DOWN_COLOR,
+        noChangeColor: UP_COLOR,
+        upBorderColor: UP_COLOR,
+        downBorderColor: DOWN_COLOR,
+        noChangeBorderColor: UP_COLOR,
+        upWickColor: UP_COLOR,
+        downWickColor: DOWN_COLOR,
+        noChangeWickColor: UP_COLOR,
+      },
+      tooltip: { showRule: TooltipShowRule.None },
+      priceMark: {
+        last: { show: false },
+        high: { show: false },
+        low: { show: false },
+      },
+    },
+    grid: {
+      horizontal: {
+        color: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)',
+        style: LineType.Dashed,
+        dashedValue: [2, 2],
+      },
+      vertical: {
+        color: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)',
+        style: LineType.Dashed,
+        dashedValue: [2, 2],
+      },
+    },
+    xAxis: {
+      axisLine: { color: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)' },
+      tickLine: { color: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)' },
+      tickText: { color: isDark ? '#9ca3af' : '#64748b', size: 10 },
+    },
+    yAxis: {
+      axisLine: { color: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)' },
+      tickLine: { color: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)' },
+      tickText: { color: isDark ? '#9ca3af' : '#64748b', size: 10 },
+    },
+    crosshair: {
+      horizontal: {
+        line: { color: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)' },
+        text: { backgroundColor: '#13ec37' },
+      },
+      vertical: {
+        line: { color: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)' },
+        text: { backgroundColor: '#13ec37' },
+      },
+    },
+    separator: { color: 'transparent' },
+  };
+}
+
+const KlineChartBody: React.FC<KlineChartBodyProps> = ({
   candles,
   signalIdx,
   formingIdx,
@@ -224,95 +234,22 @@ const ChartBody: React.FC<ChartBodyProps> = ({
 }) => {
   const isLong = direction === 'BUY';
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<ReturnType<typeof createChart> | null>(null);
-  const seriesRef = useRef<any>(null);
-  const daySepRef = useRef<SVGSVGElement | null>(null);
+  const chartRef = useRef<Chart | null>(null);
+  const overlayIdsRef = useRef<string[]>([]);
 
+  // One-time chart construction. Theme changes re-skin via setStyles below
+  // (no need to tear down + recreate, per feasibility check bonus).
   useEffect(() => {
+    registerExtensions();
     const container = containerRef.current;
     if (!container) return;
 
-    const chart = createChart(container, {
-      layout: {
-        background: { type: ColorType.Solid, color: 'transparent' },
-        textColor: isDark ? '#9ca3af' : '#64748b',
-        fontSize: 10,
-        fontFamily:
-          '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif',
-        attributionLogo: false,
-      },
-      grid: {
-        vertLines: {
-          color: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)',
-          style: 1,
-          visible: true,
-        },
-        horzLines: {
-          color: isDark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)',
-          style: 1,
-          visible: true,
-        },
-      },
-      width: container.clientWidth || 240,
-      height: container.clientHeight || 200,
-      timeScale: {
-        timeVisible: true,
-        secondsVisible: false,
-        borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
-        rightOffset: 2,
-        barSpacing: 10,
-        minBarSpacing: 4,
-      },
-      rightPriceScale: {
-        borderColor: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)',
-        scaleMargins: { top: 0.12, bottom: 0.12 },
-      },
-      crosshair: {
-        mode: 1,
-        vertLine: {
-          color: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)',
-          width: 1,
-          style: 1,
-          labelBackgroundColor: '#13ec37',
-        },
-        horzLine: {
-          color: isDark ? 'rgba(255,255,255,0.18)' : 'rgba(0,0,0,0.18)',
-          width: 1,
-          style: 1,
-          labelBackgroundColor: '#13ec37',
-        },
-      },
-      handleScroll: {
-        mouseWheel: true,
-        pressedMouseMove: true,
-        horzTouchDrag: true,
-        vertTouchDrag: false,
-      },
-      handleScale: {
-        mouseWheel: true,
-        pinch: true,
-        axisPressedMouseMove: true,
-      },
-    });
-
-    const series = chart.addCandlestickSeries({
-      upColor: UP_COLOR,
-      downColor: DOWN_COLOR,
-      borderVisible: false,
-      wickUpColor: UP_COLOR,
-      wickDownColor: DOWN_COLOR,
-    });
-
+    const chart = init(container, { styles: buildStyles(isDark) });
+    if (!chart) return;
     chartRef.current = chart;
-    seriesRef.current = series;
 
     const ro = new ResizeObserver(() => {
-      if (!chartRef.current || !containerRef.current) return;
-      const w = containerRef.current.clientWidth;
-      const h = containerRef.current.clientHeight;
-      if (w > 0 && h > 0) {
-        chartRef.current.applyOptions({ width: w, height: h });
-      }
+      chartRef.current?.resize();
     });
     ro.observe(container);
 
@@ -323,159 +260,113 @@ const ChartBody: React.FC<ChartBodyProps> = ({
         /* ignore */
       }
       try {
-        chart.remove();
+        dispose(container);
       } catch {
         /* ignore */
       }
       chartRef.current = null;
-      seriesRef.current = null;
+      overlayIdsRef.current = [];
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Theme switch — recolor in place without recreating the chart.
+  useEffect(() => {
+    chartRef.current?.setStyles(buildStyles(isDark));
   }, [isDark]);
 
+  // Data + overlays update.
   useEffect(() => {
-    const series = seriesRef.current;
     const chart = chartRef.current;
-    if (!series || !chart) return;
+    if (!chart) return;
+
+    // Clear previous overlays before drawing new ones — klinecharts overlay ids
+    // are unique per createOverlay call, so we track and remove ours explicitly.
+    for (const id of overlayIdsRef.current) {
+      try {
+        chart.removeOverlay(id);
+      } catch {
+        /* ignore */
+      }
+    }
+    overlayIdsRef.current = [];
+
     if (candles.length === 0) {
       try {
-        series.setData([]);
-        series.setMarkers([]);
+        chart.applyNewData([]);
       } catch {
         /* ignore */
       }
       return;
     }
 
-    const data = candles.map((c, i) => {
-      const base = {
-        time: (Math.floor(new Date(c.openTime).getTime() / 1000) as unknown) as Time,
-        open: c.open,
-        high: c.high,
-        low: c.low,
-        close: c.close,
-      };
-      // Per-bar override for the still-forming candle. lightweight-charts v4
-      // applies the optional color/borderColor/wickColor fields on individual
-      // data points to override series defaults — perfect for a "ghost" bar.
-      return i === formingIdx ? { ...base, ...FORMING_CANDLE_STYLE } : base;
-    });
-
+    const data: KLineData[] = candles.map((c) => ({
+      timestamp: new Date(c.openTime).getTime(),
+      open: c.open,
+      high: c.high,
+      low: c.low,
+      close: c.close,
+    }));
     try {
-      series.setData(data);
+      chart.applyNewData(data);
     } catch {
       /* ignore */
     }
 
+    // Forming-candle tint as an overlay (not an indicator — see
+    // registerExtensions for why). Anchor on the forming bar's close price;
+    // the overlay's createPointFigures only uses the timestamp for x and
+    // ignores y entirely, but klinecharts requires a numeric `value`.
+    if (formingIdx >= 0 && formingIdx < data.length) {
+      const id = chart.createOverlay({
+        name: 'cl-forming',
+        points: [
+          {
+            timestamp: data[formingIdx].timestamp,
+            value: candles[formingIdx].close,
+          },
+        ],
+      });
+      if (typeof id === 'string' && id) overlayIdsRef.current.push(id);
+    }
+
     if (signalIdx >= 0 && signalIdx < data.length) {
-      // Direction-coherence check, variant-aware. SE requires the signal
-      // candle's body color to match the chain direction; CRT and BIAS do
-      // not enforce a body-color rule on the signal bar. See
-      // `shouldShowDirectionWarning` for the per-variant contract.
       const sig = candles[signalIdx];
       const warn = shouldShowDirectionWarning(variant, direction, {
         open: sig.open,
         close: sig.close,
       });
-      const marker = {
-        time: data[signalIdx].time,
-        position: isLong ? ('belowBar' as const) : ('aboveBar' as const),
-        color: warn ? WARN_COLOR : markerColor,
-        shape: (isLong ? 'arrowUp' : 'arrowDown') as 'arrowUp' | 'arrowDown',
-        text: warn ? 'SIGNAL ⚠' : 'SIGNAL',
-        size: 1.2,
-      };
-      try {
-        series.setMarkers([marker]);
-      } catch {
-        /* ignore */
-      }
-    } else {
-      try {
-        series.setMarkers([]);
-      } catch {
-        /* ignore */
-      }
+      const arrowColor = warn ? WARN_COLOR : markerColor;
+      const text = warn ? 'SIGNAL ⚠' : 'SIGNAL';
+      // anchor below the bar for BUY (arrow points up), above for SELL.
+      const anchorPrice = isLong ? sig.low : sig.high;
+      const id = chart.createOverlay({
+        name: 'cl-signal',
+        points: [{ timestamp: data[signalIdx].timestamp, value: anchorPrice }],
+        extendData: { dir: isLong ? 'up' : 'down', color: arrowColor, text },
+      });
+      if (typeof id === 'string' && id) overlayIdsRef.current.push(id);
     }
 
-    try {
-      chart.timeScale().fitContent();
-    } catch {
-      /* ignore */
-    }
-  }, [candles, signalIdx, formingIdx, variant, direction, markerColor]);
-
-  // UTC-midnight day-separator overlay. Sub-daily TFs (4H/1H/15m/5m) span
-  // multiple days inside the 15-bar window and need a visual anchor for "where
-  // did yesterday end and today begin" — same convention TradingView uses.
-  // W and 1D bars each represent at least a full day so separators are noise.
-  useEffect(() => {
-    const chart = chartRef.current;
-    const overlay = daySepRef.current;
-    if (!chart || !overlay) return;
-
-    const clear = () => {
-      while (overlay.firstChild) overlay.removeChild(overlay.firstChild);
-    };
-
-    if (tf === 'W' || tf === '1D' || candles.length === 0) {
-      clear();
-      return;
-    }
-
-    const DAY_MS = 86_400_000;
-    const ts = chart.timeScale();
-    const ns = 'http://www.w3.org/2000/svg';
-
-    const draw = () => {
-      clear();
-      for (const c of candles) {
-        const ms = new Date(c.openTime).getTime();
-        // Only candles whose openTime IS a UTC midnight separate days. For
-        // 4H/1H/15m/5m the day-boundary candle sits exactly on `ms % DAY === 0`.
-        if (ms % DAY_MS !== 0) continue;
-        const time = (Math.floor(ms / 1000) as unknown) as Time;
-        const x = ts.timeToCoordinate(time);
-        if (x === null) continue;
-        const line = document.createElementNS(ns, 'line');
-        line.setAttribute('x1', String(x));
-        line.setAttribute('y1', '0');
-        line.setAttribute('x2', String(x));
-        line.setAttribute('y2', '100%');
-        line.setAttribute('stroke', 'currentColor');
-        line.setAttribute('stroke-width', '1');
-        line.setAttribute('stroke-dasharray', '3 3');
-        line.setAttribute('vector-effect', 'non-scaling-stroke');
-        overlay.appendChild(line);
+    // Day separators on sub-daily TFs only — same convention as the LW chart.
+    if (tf !== 'W' && tf !== '1D') {
+      const DAY_MS = 86_400_000;
+      for (const c of data) {
+        if (c.timestamp % DAY_MS !== 0) continue;
+        // anchor value is irrelevant — the dayline figure ignores y.
+        const id = chart.createOverlay({
+          name: 'cl-dayline',
+          points: [{ timestamp: c.timestamp, value: candles[0].open }],
+        });
+        if (typeof id === 'string' && id) overlayIdsRef.current.push(id);
       }
-    };
-
-    draw();
-    ts.subscribeVisibleTimeRangeChange(draw);
-    return () => {
-      try {
-        ts.unsubscribeVisibleTimeRangeChange(draw);
-      } catch {
-        /* chart may already be torn down */
-      }
-    };
-  }, [candles, tf]);
+    }
+  }, [candles, signalIdx, formingIdx, variant, direction, markerColor, tf, isLong]);
 
   return (
     <div
       className={`relative w-full h-full flex-1 min-h-[160px] rounded-lg overflow-hidden dark:bg-black/20 light:bg-white/80 ${className}`}
     >
-      {/* Day-separator overlay — sits BEFORE the chart container in DOM so it
-          paints first; the chart canvas's transparent background lets the
-          dashed lines show through, while opaque candle bodies cover them
-          where they overlap (TradingView-style "behind candles" layering).
-          currentColor + per-theme tints keep it themable, pointer-events-none
-          so pan/zoom and crosshair receive every event. */}
-      <svg
-        ref={daySepRef}
-        className="absolute inset-0 pointer-events-none dark:text-white/[0.18] light:text-slate-400/55"
-        preserveAspectRatio="none"
-        aria-hidden
-      />
       <div ref={containerRef} className="absolute inset-0" />
       {loading && candles.length === 0 && (
         <div className="absolute inset-0 flex items-center justify-center">

@@ -1,10 +1,10 @@
 /**
- * Pure helpers shared by every CISD overlay backend. Times are Unix seconds.
+ * Pure helpers shared by the CISD overlay layout pass. Times are Unix seconds.
  *
- * `CisdGeometryProvider` is the chart-engine-agnostic surface the layout pass
- * needs: time→x, price→y, and a subscription that fires whenever the visible
- * range or container size changes. Each chart engine (lightweight-charts,
- * klinecharts, …) supplies its own implementation.
+ * `CisdGeometryProvider` is the surface the layout pass needs: time→x,
+ * price→y, and a subscription that fires whenever the visible range or
+ * container size changes. The klinecharts implementation lives in
+ * `core-layer/kline-extensions.ts` (`makeKlineGeometryProvider`).
  */
 
 export interface GeometryCandleBar {

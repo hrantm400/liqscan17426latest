@@ -5,7 +5,7 @@ import { motion } from 'framer-motion';
 import { Signal } from '../types';
 import { fetchCandles } from '../services/candles';
 import { fetchSignalById, fetchSignals } from '../services/signalsApi';
-import { InteractiveLiveChartGate } from '../components/InteractiveLiveChartGate';
+import { InteractiveLiveChart } from '../components/InteractiveLiveChart';
 import { isCisdFamilySignal } from '../utils/drawCisdOverlays';
 import { SignalBadge } from '../components/shared/SignalBadge';
 import { TimeDisplay } from '../components/shared/TimeDisplay';
@@ -585,7 +585,7 @@ export function SignalDetails() {
                     </div>
                   ) : (
                     <div className="relative flex-1 dark:bg-[#0b140d] light:bg-white rounded-xl overflow-hidden dark:border-white/5 light:border-green-200/50">
-                      <InteractiveLiveChartGate
+                      <InteractiveLiveChart
                         candles={chartCandles as Candle[]}
                         signal={signalData}
                         relatedSignals={cisdRelatedForChart}

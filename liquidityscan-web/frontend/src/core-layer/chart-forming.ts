@@ -34,18 +34,3 @@ export function findFormingCandleIdx(
   return openMs + intervalMs > now ? lastIdx : -1;
 }
 
-/**
- * Per-bar style overrides applied to the forming candle in CoreLayerChart.
- * Muted gray body + visible gray outline so the bar reads as a placeholder
- * (not a closed signal-quality bar). lightweight-charts v4 candle data
- * accepts these as optional fields per data-point to override series defaults.
- *
- * Direction tint is intentionally dropped here — a forming bar's direction
- * is provisional until close. Solid up/down coloring would suggest finality
- * the bar does not yet have.
- */
-export const FORMING_CANDLE_STYLE = {
-  color: 'rgba(156,163,175,0.15)',
-  borderColor: 'rgba(156,163,175,0.7)',
-  wickColor: 'rgba(156,163,175,0.55)',
-} as const;

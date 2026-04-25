@@ -5,7 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import { useFloatingChartStore, FloatingChartData } from '../../store/floatingChartStore';
 import { buildMonitorSearchParams, getMonitorLocationForStrategy } from '../../utils/floatingChartRoutes';
-import { InteractiveLiveChartGate } from '../InteractiveLiveChartGate';
+import { InteractiveLiveChart } from '../InteractiveLiveChart';
 import { fetchCandles } from '../../services/candles';
 import { fetchSignalById, fetchSignals } from '../../services/signalsApi';
 import { isCisdFamilySignal } from '../../utils/drawCisdOverlays';
@@ -418,7 +418,7 @@ export const FloatingChart: React.FC<FloatingChartProps> = ({ chartData }) => {
                         </div>
                     </div>
                 ) : (
-                    <InteractiveLiveChartGate
+                    <InteractiveLiveChart
                         candles={historicalCandles || []}
                         symbol={chartData.symbol}
                         timeframe={chartData.timeframe}

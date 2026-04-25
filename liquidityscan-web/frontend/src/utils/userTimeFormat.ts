@@ -1,4 +1,5 @@
-import type { Time } from 'lightweight-charts';
+// Time = unix seconds (legacy LW shape, kept as plain number).
+type Time = number;
 
 /**
  * Maps fixed-offset strings from the user profile (e.g. "+04:00") to IANA Etc/GMT* zones.
@@ -92,7 +93,7 @@ export function getTimezoneLabelForDisplay(timezoneOffset: string | undefined | 
   return `UTC${sign}${h}:${timezoneOffset.slice(4, 6)}`;
 }
 
-/** lightweight-charts: unix seconds → label aligned with profile timezone (or browser local). */
+/** Unix seconds → label aligned with profile timezone (or browser local). */
 export function formatChartTimeForUser(time: Time, timezoneOffset: string | undefined | null): string {
   let ms: number;
   if (typeof time === 'number') {
