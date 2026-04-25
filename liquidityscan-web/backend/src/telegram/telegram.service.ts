@@ -202,17 +202,67 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
         timeframe: string,
         signalType: string,
         price: number,
-        metadata?: Record<string, any>
+        metadata?: Record<string, any>,
+        signalId?: string,
     ): Promise<Buffer | null> {
         const normTf = normalizeTimeframeForAlerts(timeframe);
         const candlesLw = await this.candlesService.getKlines(symbol, normTf, 120);
         if (candlesLw?.length) {
+            // For SE signals, find the signal-candle index in the rendered
+            // 120-bar window so the renderer can anchor TP/SL segment x-start
+            // 5 bars before that bar (matches frontend InteractiveLiveChart).
+            // Signal IDs are formatted `SUPER_ENGULFING-{symbol}-{tf}-{pattern}-{openTimeMs}`,
+            // so the trailing -{number} suffix gives detectedAt directly without
+            // plumbing a separate field through.
+            let signalCandleIdx: number | undefined;
+            if (signalId && signalId.indexOf('SUPER_ENGULFING') === 0) {
+                const m = /-(\d+)$/.exec(signalId);
+                if (m) {
+                    const detectedAtMs = Number(m[1]);
+                    if (Number.isFinite(detectedAtMs)) {
+                        let bestIdx = -1;
+                        let bestDiff = Infinity;
+                        for (let i = 0; i < candlesLw.length; i++) {
+                            const diff = Math.abs(
+                                Number((candlesLw[i] as any).openTime) - detectedAtMs,
+                            );
+                            if (diff < bestDiff) {
+                                bestDiff = diff;
+                                bestIdx = i;
+                            }
+                        }
+                        if (bestIdx >= 0) signalCandleIdx = bestIdx;
+                    }
+                }
+            }
+
+            // Defensive: pull SE v2/v1 fields from metadata into top-level
+            // signal payload so the renderer's inline readSeLines fallback
+            // chain finds them. We don't have direct access to the DB row's
+            // columns at this layer — only the metadata blob — but the SE
+            // detector writes the same v2 keys (sl_price, tp1_price, …)
+            // into metadata, so the readSeLines chain still resolves.
+            const seFields: Record<string, number | null | undefined> = {};
+            if (signalId && signalId.indexOf('SUPER_ENGULFING') === 0 && metadata) {
+                for (const k of [
+                    'sl_price', 'current_sl_price',
+                    'tp1_price', 'tp2_price', 'tp3_price',
+                    'se_sl', 'se_current_sl', 'se_tp1', 'se_tp2',
+                ]) {
+                    if (metadata[k] !== undefined) seFields[k] = metadata[k];
+                }
+            }
+
             const png = await this.chartPlaywright.renderCandlestickPng(candlesLw, {
                 signalType,
                 price,
                 symbol,
                 timeframe: normTf,
                 strategyType,
+                id: signalId,
+                signalCandleIdx,
+                metadata,
+                ...seFields,
             });
             if (png) return png;
         }
@@ -370,9 +420,44 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
             let details = '';
             if (strategyType === 'SUPER_ENGULFING' && metadata) {
                 const pattern = metadata.pattern || '';
-                if (metadata.se_sl) details += `🛑 *SL:* ${esc(Number(metadata.se_sl).toFixed(4))}\n`;
-                if (metadata.se_tp1) details += `🎯 *TP1 (2R):* ${esc(Number(metadata.se_tp1).toFixed(4))}\n`;
-                if (metadata.se_tp2) details += `🏆 *TP2 (3R):* ${esc(Number(metadata.se_tp2).toFixed(4))}\n`;
+                // SE values: prefer v2 keys (sl_price, tp1-3_price), fall
+                // back to v1 (se_sl, se_tp1, se_tp2) for legacy signals
+                // emitted before the v2 schema was wired up. Mirrors the
+                // frontend readSeLines fallback chain.
+                const num = (v: any): number | null =>
+                    typeof v === 'number' && Number.isFinite(v) ? v : null;
+                const entry = num(metadata.entry_price) ?? Number(price);
+                const sl =
+                    num(metadata.current_sl_price) ??
+                    num(metadata.sl_price) ??
+                    num(metadata.se_current_sl) ??
+                    num(metadata.se_sl);
+                const tp1 = num(metadata.tp1_price) ?? num(metadata.se_tp1);
+                const tp2 = num(metadata.tp2_price) ?? num(metadata.se_tp2);
+                const tp3 = num(metadata.tp3_price);
+                // Format value to 4 decimals if < 10, 2 otherwise — matches
+                // the existing TP/SL formatting (Number(x).toFixed(4)) but
+                // adapts for high-priced assets like ETH/BTC where 4 dp is
+                // unnecessarily noisy.
+                const fmt = (v: number) =>
+                    v >= 10 ? v.toFixed(2) : v.toFixed(4);
+                // Pad label to 5 chars so the colon column aligns:
+                //   Entry: …    SL:    …    TP1:   …    TP2:   …    TP3:   …
+                // Wrapped in a triple-backtick code fence for monospace
+                // rendering (Markdown parse_mode) — that's the only way
+                // to get vertical alignment in a Telegram caption.
+                const padLabel = (s: string) => (s + ':').padEnd(7, ' ');
+                const lines: string[] = [];
+                if (Number.isFinite(entry)) {
+                    lines.push(`📍 ${padLabel('Entry')}${fmt(entry)}`);
+                }
+                if (sl !== null) lines.push(`🛑 ${padLabel('SL')}${fmt(sl)}`);
+                if (tp1 !== null) lines.push(`🎯 ${padLabel('TP1')}${fmt(tp1)}`);
+                if (tp2 !== null) lines.push(`🎯 ${padLabel('TP2')}${fmt(tp2)}`);
+                if (tp3 !== null) lines.push(`🎯 ${padLabel('TP3')}${fmt(tp3)}`);
+                if (lines.length > 0) {
+                    details += '```\n' + lines.join('\n') + '\n```\n';
+                }
                 if (pattern) details += `📋 *Pattern:* ${esc(pattern)}\n`;
             } else if (strategyType === 'ICT_BIAS' && metadata) {
                 if (metadata.bias) details += `🧭 *Bias:* ${esc(metadata.bias)}\n`;
@@ -407,7 +492,7 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
                 (details ? `\n${details}` : '') +
                 `\n[Open on LiquidityScan](${openLink})`;
 
-            const imageBuffer = await this.generateSignalCard(symbol, strategyType, timeframe, signalType, price, metadata);
+            const imageBuffer = await this.generateSignalCard(symbol, strategyType, timeframe, signalType, price, metadata, signalId);
 
             let msgsSent = 0;
             let skipped = 0;
