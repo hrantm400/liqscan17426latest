@@ -665,6 +665,7 @@ export function KlineInteractiveLiveChart({
       if (divResult) {
         const isBullish = divResult.type === 'bullish';
         const color = isBullish ? '#089981' : '#F23645';
+        const pointer: 'up' | 'down' = isBullish ? 'up' : 'down';
         const prevTs = new Date(
           slicedCandles[divResult.prevPivotIdx].openTime,
         ).getTime();
@@ -673,36 +674,128 @@ export function KlineInteractiveLiveChart({
         ).getTime();
 
         // (a) Price-pane divergence line — anchored to candle_pane,
-        // connecting the two PRICE pivots.
-        const priceLineId = chart.createOverlay({
-          name: 'cl-rsi-divergence',
-          points: [
-            { timestamp: prevTs, value: divResult.prevPivotPrice },
-            { timestamp: currTs, value: divResult.currPivotPrice },
-          ],
-          extendData: { color },
-        });
-        if (typeof priceLineId === 'string' && priceLineId) {
+        // connecting the two PRICE pivots. paneId passed explicitly:
+        // klinecharts' default-pane behavior with multi-pane charts can
+        // be unpredictable (sometimes the most recently created pane
+        // wins). Explicit 'candle_pane' is the safe path.
+        const priceLineIdRaw = chart.createOverlay(
+          {
+            name: 'cl-rsi-divergence',
+            points: [
+              { timestamp: prevTs, value: divResult.prevPivotPrice },
+              { timestamp: currTs, value: divResult.currPivotPrice },
+            ],
+            extendData: { color, labelA: 'Pivot 1', labelB: 'Pivot 2', pointer },
+          },
+          'candle_pane',
+        );
+        const priceLineId =
+          typeof priceLineIdRaw === 'string' && priceLineIdRaw
+            ? priceLineIdRaw
+            : null;
+        if (priceLineId) {
           overlayIdsRef.current.push(priceLineId);
+        } else if (typeof console !== 'undefined') {
+          console.warn(
+            '[KlineInteractiveLiveChart] price-pane divergence overlay creation returned null',
+          );
         }
 
         // (b) RSI-pane divergence line — same overlay shape, anchored to
         // the RSI pane via paneId, connecting the two RSI VALUE pivots.
+        let rsiLineId: string | null = null;
         if (rsiPaneIdRef.current) {
-          const rsiLineId = chart.createOverlay(
+          const rsiLineIdRaw = chart.createOverlay(
             {
               name: 'cl-rsi-divergence',
               points: [
                 { timestamp: prevTs, value: divResult.prevPivotRsi },
                 { timestamp: currTs, value: divResult.currPivotRsi },
               ],
-              extendData: { color },
+              extendData: { color, labelA: 'Pivot 1', labelB: 'Pivot 2', pointer },
             },
             rsiPaneIdRef.current,
           );
-          if (typeof rsiLineId === 'string' && rsiLineId) {
+          rsiLineId =
+            typeof rsiLineIdRaw === 'string' && rsiLineIdRaw
+              ? rsiLineIdRaw
+              : null;
+          if (rsiLineId) {
             overlayIdsRef.current.push(rsiLineId);
+          } else if (typeof console !== 'undefined') {
+            console.warn(
+              '[KlineInteractiveLiveChart] RSI-pane divergence overlay creation returned null',
+              { rsiPaneId: rsiPaneIdRef.current },
+            );
           }
+        } else if (typeof console !== 'undefined') {
+          console.warn(
+            '[KlineInteractiveLiveChart] RSI pane id not yet captured — divergence on RSI pane skipped',
+          );
+        }
+
+        // PR #21 diagnostic — overlays are created but not visible. Log
+        // the full divergence + id state so we can correlate against the
+        // [cl-rsi-divergence] createPointFigures logs from the overlay
+        // itself. Remove once root cause is identified.
+        if (typeof console !== 'undefined') {
+          console.log('[KlineInteractiveLiveChart] divergence detected:', {
+            type: divResult.type,
+            prevPivotIdx: divResult.prevPivotIdx,
+            currPivotIdx: divResult.currPivotIdx,
+            candleCount: slicedCandles.length,
+            prevTs,
+            currTs,
+            prevPivotPrice: divResult.prevPivotPrice,
+            currPivotPrice: divResult.currPivotPrice,
+            prevPivotRsi: divResult.prevPivotRsi,
+            currPivotRsi: divResult.currPivotRsi,
+            priceLineId,
+            rsiLineId,
+            rsiPaneId: rsiPaneIdRef.current,
+          });
+        }
+      } else if (typeof console !== 'undefined') {
+        console.warn(
+          '[KlineInteractiveLiveChart] detectLastDivergence returned null',
+          { signalId: signal.id, candleCount: slicedCandles.length },
+        );
+      }
+    }
+
+    // Entry-price horizontal line — drawn for EVERY signal where we
+    // have a signal candle index, mirrors LW's "displacement line"
+    // (InteractiveLiveChart.tsx line 945). LW uses addLineSeries with
+    // priceLineVisible:true to auto-show the value label on the right
+    // axis. klinecharts' built-in `priceLine` overlay is the
+    // equivalent primitive — full-width horizontal line at the price
+    // level, value label on the price axis automatically.
+    if (signalCandleIndex >= 0) {
+      const sigCandle = slicedCandles[signalCandleIndex];
+      const entryPrice =
+        typeof signal.price === 'number'
+          ? signal.price
+          : Number(signal.price ?? sigCandle.close);
+      if (Number.isFinite(entryPrice)) {
+        const entryColor =
+          signal.signalType === 'BUY' ? '#089981' : '#F23645';
+        const entryLineId = chart.createOverlay(
+          {
+            name: 'priceLine',
+            points: [{ value: entryPrice }],
+            styles: {
+              line: {
+                color: entryColor,
+                size: 2,
+                style: LineType.Solid,
+              },
+            },
+            lock: true,
+          },
+          'candle_pane',
+        );
+        if (typeof entryLineId === 'string' && entryLineId) {
+          overlayIdsRef.current.push(entryLineId);
         }
       }
     }
