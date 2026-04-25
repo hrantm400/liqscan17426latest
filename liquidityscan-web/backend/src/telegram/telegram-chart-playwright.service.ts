@@ -1,19 +1,29 @@
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
 import type { Browser } from 'playwright';
 
-export type TelegramLwSignal = {
+// Renamed: previously TelegramLwSignal — kept the legacy name as an alias
+// in case anything else references it. The shape is engine-agnostic.
+export type TelegramChartSignal = {
     signalType: string;
     price: number;
     symbol?: string;
     timeframe?: string;
     strategyType?: string;
 };
+export type TelegramLwSignal = TelegramChartSignal;
 
 type OhlcCandle = { openTime: number; open: number; high: number; low: number; close: number };
 
 /**
- * Headless Lightweight Charts screenshot for Telegram (optional — requires `playwright` + Chromium).
+ * Headless klinecharts screenshot for Telegram (optional — requires `playwright` + Chromium).
  * Set TELEGRAM_CHART_PLAYWRIGHT=false to disable.
+ *
+ * Chunk #7 (narrow): migrated from lightweight-charts CDN to klinecharts
+ * CDN. Visual surface unchanged from the LW baseline — same 920×440 dark
+ * canvas, same candles, same single arrow + signalType label on the LAST
+ * bar. No CISD/SE/RSI overlays in either version. The previous LW
+ * implementation is preserved alongside this file as
+ * `telegram-chart-playwright.service.ts.lw.bak` for rollback.
  */
 @Injectable()
 export class TelegramChartPlaywrightService implements OnModuleDestroy {
@@ -60,7 +70,7 @@ export class TelegramChartPlaywrightService implements OnModuleDestroy {
         return this.browserLaunch;
     }
 
-    async renderCandlestickPng(candles: OhlcCandle[], signal: TelegramLwSignal): Promise<Buffer | null> {
+    async renderCandlestickPng(candles: OhlcCandle[], signal: TelegramChartSignal): Promise<Buffer | null> {
         if (this.disabled() || !candles?.length) return null;
         return this.enqueue(() => this.renderInner(candles, signal));
     }
@@ -74,15 +84,15 @@ export class TelegramChartPlaywrightService implements OnModuleDestroy {
         return run;
     }
 
-    private dedupeByTime(bars: { time: number; open: number; high: number; low: number; close: number }[]) {
+    private dedupeByTimestamp(bars: { timestamp: number; open: number; high: number; low: number; close: number }[]) {
         const map = new Map<number, (typeof bars)[0]>();
         for (const b of bars) {
-            map.set(b.time, b);
+            map.set(b.timestamp, b);
         }
-        return [...map.values()].sort((a, b) => a.time - b.time);
+        return [...map.values()].sort((a, b) => a.timestamp - b.timestamp);
     }
 
-    private async renderInner(candles: OhlcCandle[], signal: TelegramLwSignal): Promise<Buffer | null> {
+    private async renderInner(candles: OhlcCandle[], signal: TelegramChartSignal): Promise<Buffer | null> {
         const browser = await this.getBrowser();
         if (!browser) return null;
         const page = await browser.newPage({ viewport: { width: 920, height: 460 }, deviceScaleFactor: 1 });
@@ -95,65 +105,136 @@ export class TelegramChartPlaywrightService implements OnModuleDestroy {
                 document.body.innerHTML = '<div id="c"></div>';
             });
             await page.addScriptTag({
-                url: 'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js',
+                url: 'https://cdn.jsdelivr.net/npm/klinecharts@9.8.12/dist/umd/klinecharts.min.js',
             });
             await page.waitForFunction(
-                () => typeof (window as unknown as { LightweightCharts?: unknown }).LightweightCharts !== 'undefined',
+                () => typeof (window as unknown as { klinecharts?: unknown }).klinecharts !== 'undefined',
                 { timeout: 20000 },
             );
 
+            // klinecharts expects millisecond timestamps and a KLineData
+            // shape. openTime is already a millisecond epoch from the
+            // candles service, so no division/multiplication needed
+            // (LW required seconds, hence the previous /1000).
             const raw = candles.map((c) => ({
-                time: Math.floor(Number(c.openTime) / 1000),
+                timestamp: Number(c.openTime),
                 open: Number(c.open),
                 high: Number(c.high),
                 low: Number(c.low),
                 close: Number(c.close),
             }));
-            const lwData = this.dedupeByTime(raw);
+            const kData = this.dedupeByTimestamp(raw);
 
             await page.evaluate(
-                ({ bars, sig }: { bars: any[]; sig: TelegramLwSignal }) => {
-                    const LW = (window as unknown as { LightweightCharts: any }).LightweightCharts;
+                ({ bars, sig }: { bars: any[]; sig: TelegramChartSignal }) => {
+                    const KC = (window as unknown as { klinecharts: any }).klinecharts;
                     const el = document.getElementById('c');
                     if (!el || !bars.length) return;
-                    const chart = LW.createChart(el, {
-                        layout: {
-                            background: { type: 'solid', color: '#0b140d' },
-                            textColor: '#b8b8b8',
+
+                    // Inline overlay matching LW's setMarkers + arrowUp /
+                    // arrowDown shape. Keeps the renderer visually
+                    // equivalent to the LW baseline: small filled triangle
+                    // anchored a few px from the bar high/low, signalType
+                    // text directly above/below the triangle.
+                    KC.registerOverlay({
+                        name: 'tg-signal-arrow',
+                        totalStep: 2,
+                        needDefaultPointFigure: false,
+                        needDefaultXAxisFigure: false,
+                        needDefaultYAxisFigure: false,
+                        createPointFigures: ({ coordinates, overlay }: any) => {
+                            const p = coordinates[0];
+                            if (!p) return [];
+                            const ext = overlay.extendData || {};
+                            const isUp = ext.dir === 'up';
+                            const tipOffset = 8;
+                            const arrowSize = 10;
+                            const tipY = isUp ? p.y + tipOffset : p.y - tipOffset;
+                            const baseY = isUp ? tipY + arrowSize : tipY - arrowSize;
+                            const labelY = isUp ? baseY + 4 : baseY - 4;
+                            return [
+                                {
+                                    type: 'polygon',
+                                    attrs: {
+                                        coordinates: [
+                                            { x: p.x, y: tipY },
+                                            { x: p.x - 6, y: baseY },
+                                            { x: p.x + 6, y: baseY },
+                                        ],
+                                    },
+                                    styles: { color: ext.color, style: 'fill' },
+                                },
+                                {
+                                    type: 'text',
+                                    attrs: {
+                                        x: p.x,
+                                        y: labelY,
+                                        text: String(ext.text || ''),
+                                        align: 'center',
+                                        baseline: isUp ? 'top' : 'bottom',
+                                    },
+                                    styles: { color: ext.color, size: 12, weight: 'bold', family: 'sans-serif' },
+                                },
+                            ];
                         },
-                        grid: {
-                            vertLines: { color: 'rgba(255,255,255,0.06)' },
-                            horzLines: { color: 'rgba(255,255,255,0.06)' },
+                    });
+
+                    const chart = KC.init(el, {
+                        styles: {
+                            grid: {
+                                horizontal: { color: 'rgba(255,255,255,0.06)' },
+                                vertical: { color: 'rgba(255,255,255,0.06)' },
+                            },
+                            candle: {
+                                bar: {
+                                    upColor: '#089981',
+                                    downColor: '#F23645',
+                                    noChangeColor: '#089981',
+                                    upBorderColor: '#089981',
+                                    downBorderColor: '#F23645',
+                                    noChangeBorderColor: '#089981',
+                                    upWickColor: '#089981',
+                                    downWickColor: '#F23645',
+                                    noChangeWickColor: '#089981',
+                                },
+                                tooltip: { showRule: 'none' },
+                                priceMark: {
+                                    last: { show: true },
+                                    high: { show: false },
+                                    low: { show: false },
+                                },
+                            },
+                            xAxis: {
+                                axisLine: { color: 'rgba(255,255,255,0.12)' },
+                                tickText: { color: '#b8b8b8' },
+                            },
+                            yAxis: {
+                                axisLine: { color: 'rgba(255,255,255,0.12)' },
+                                tickText: { color: '#b8b8b8' },
+                            },
                         },
-                        rightPriceScale: { borderColor: 'rgba(255,255,255,0.12)' },
-                        timeScale: { borderColor: 'rgba(255,255,255,0.12)' },
-                        width: 920,
-                        height: 440,
                     });
-                    const series = chart.addCandlestickSeries({
-                        upColor: '#089981',
-                        downColor: '#F23645',
-                        borderVisible: false,
-                        wickUpColor: '#089981',
-                        wickDownColor: '#F23645',
-                    });
-                    series.setData(bars);
+                    if (!chart) return;
+                    chart.applyNewData(bars);
+
                     const st = String(sig.signalType || '');
                     const isBuy = st.includes('BUY');
                     const last = bars[bars.length - 1];
                     const label = (st || (isBuy ? 'BUY' : 'SELL')).slice(0, 24);
-                    series.setMarkers([
-                        {
-                            time: last.time,
-                            position: isBuy ? 'belowBar' : 'aboveBar',
+                    // anchor at low for buy (arrow points up from below the
+                    // bar), high for sell (arrow points down from above)
+                    const anchor = isBuy ? last.low : last.high;
+                    chart.createOverlay({
+                        name: 'tg-signal-arrow',
+                        points: [{ timestamp: last.timestamp, value: anchor }],
+                        extendData: {
+                            dir: isBuy ? 'up' : 'down',
                             color: isBuy ? '#089981' : '#F23645',
-                            shape: isBuy ? 'arrowUp' : 'arrowDown',
                             text: label,
                         },
-                    ]);
-                    chart.timeScale().fitContent();
+                    });
                 },
-                { bars: lwData, sig: signal },
+                { bars: kData, sig: signal },
             );
 
             await new Promise((r) => setTimeout(r, 500));
