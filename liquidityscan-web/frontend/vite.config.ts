@@ -40,7 +40,7 @@ export default defineConfig({
       output: {
         manualChunks: {
           'react-vendor': ['react', 'react-dom', 'react-router-dom'],
-          'chart-vendor': ['lightweight-charts'],
+          'chart-vendor': ['klinecharts'],
           'query-vendor': ['@tanstack/react-query'],
           'socket-vendor': ['socket.io-client'],
           'motion-vendor': ['framer-motion'],
@@ -50,7 +50,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 1000,
   },
   optimizeDeps: {
-    include: ['react', 'react-dom', 'react-router-dom', 'lightweight-charts', 'framer-motion', 'lucide-react'],
+    include: ['react', 'react-dom', 'react-router-dom', 'klinecharts', 'framer-motion', 'lucide-react'],
     esbuildOptions: {
       jsx: 'automatic',
     },

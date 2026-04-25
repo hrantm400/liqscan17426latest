@@ -1,25 +1,12 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { CoreLayerChart } from './CoreLayerChart';
-import { KlineCoreLayerChart } from './KlineCoreLayerChart';
 import { LifeStatePill } from './LifeStatePill';
 import { TradingViewWidget } from '../TradingViewWidget';
 import { useTheme } from '../../contexts/ThemeContext';
 import { computeBreathingPhase } from '../../core-layer/helpers';
 import { MOCK_NOW } from '../../core-layer/constants';
 import type { CoreLayerSignal, TF, TFLifeState } from '../../core-layer/types';
-
-/**
- * Read the chart-engine flag from the URL once at render. Default engine is
- * lightweight-charts (CoreLayerChart). When the URL carries `?engine=kline`,
- * mount KlineCoreLayerChart instead — opt-in PoC for the chart-library
- * migration. Anyone without the flag sees zero behavior change.
- */
-function useChartEngine(): 'lw' | 'kline' {
-  if (typeof window === 'undefined') return 'lw';
-  const v = new URLSearchParams(window.location.search).get('engine');
-  return v === 'kline' ? 'kline' : 'lw';
-}
 
 interface Props {
   signal: CoreLayerSignal;
@@ -45,8 +32,8 @@ interface Props {
  * derived from the TF's life state and breathing sub-phase.
  *
  * The chart body has two modes, toggled per-tile by the header button:
- *   - Native (default): `CoreLayerChart` — lightweight-charts mini with the
- *     signal candle highlighted (matches scanner monitors' visual language).
+ *   - Native (default): `CoreLayerChart` — klinecharts mini with the signal
+ *     candle highlighted (matches scanner monitors' visual language).
  *   - TradingView: full TV iframe widget for the same symbol + TF. No signal
  *     marker (TV is its own world), but full TV toolbar / studies available.
  */
@@ -68,7 +55,6 @@ export const CoreLayerChartTile: React.FC<Props> = ({
   const { theme } = useTheme();
   const isDark = theme === 'dark';
   const [showTradingView, setShowTradingView] = useState(false);
-  const engine = useChartEngine();
 
   return (
     <div
@@ -92,7 +78,7 @@ export const CoreLayerChartTile: React.FC<Props> = ({
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
-          {/* Source toggle — Native (lightweight-charts) ↔ TradingView iframe.
+          {/* Source toggle — Native (klinecharts) ↔ TradingView iframe.
               Mirrors the InteractiveLiveChart toolbar button used by the
               SignalDetails page so the affordance is familiar to users who
               already know the scanner monitors. */}
@@ -139,17 +125,6 @@ export const CoreLayerChartTile: React.FC<Props> = ({
             interval={tvInterval(tf)}
             theme={isDark ? 'dark' : 'light'}
             height="100%"
-          />
-        ) : engine === 'kline' ? (
-          <KlineCoreLayerChart
-            pair={signal.pair}
-            tf={tf}
-            direction={signal.direction}
-            variant={signal.variant}
-            signalCloseMs={signal.tfLastCandleClose[tf] ?? null}
-            candleCount={candleCount}
-            lifeState={state}
-            breathingPhase={phase}
           />
         ) : (
           <CoreLayerChart

@@ -1,12 +1,6 @@
 /**
- * Pine-style HTML label mount for klinecharts. Parallel to
- * `lwChartTvLabels.ts` — same visual contract (TvLabelItem variant + pointer
- * direction), klinecharts-native subscribe / coord conversion.
- *
- * Implemented as a separate module rather than a refactor of lwChartTvLabels
- * so we don't risk regressions on the LW path (still in production via
- * InteractiveLiveChart). Once the kline migration completes, lwChartTvLabels
- * can be deleted along with the LW component.
+ * Pine-style HTML label mount for klinecharts — TvLabelItem variant +
+ * pointer direction, klinecharts-native subscribe / coord conversion.
  */
 import { ActionType, type Chart } from 'klinecharts';
 
@@ -20,7 +14,7 @@ const ACCENT_BG = '#eab308';
 export type KlineTvLabelVariant = 'bull' | 'bear' | 'neutral' | 'accent';
 
 export interface KlineTvLabelItem {
-  /** Unix seconds — same shape lwChartTvLabels uses for cross-engine parity. */
+  /** Unix seconds. */
   timeSec: number;
   price: number;
   text: string;

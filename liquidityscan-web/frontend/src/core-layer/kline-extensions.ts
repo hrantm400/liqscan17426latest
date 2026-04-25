@@ -1,22 +1,13 @@
 /**
- * Shared klinecharts extensions used by every kline-engine chart in the app.
+ * Shared klinecharts extensions used by every chart in the app.
  *
- *  - `registerExtensions()` is idempotent. Both KlineCoreLayerChart (mini
- *    pair-detail tiles) and KlineInteractiveLiveChart (full SignalDetails
+ *  - `registerExtensions()` is idempotent. Both `CoreLayerChart` (mini
+ *    pair-detail tiles) and `InteractiveLiveChart` (full SignalDetails
  *    chart) call it on mount; the second call is a no-op.
  *
  *  - `makeKlineGeometryProvider(chart)` produces a `CisdGeometryProvider`
- *    so the engine-agnostic `drawCisdOverlays` (PR #7) can position its
- *    HTML overlays against a klinecharts instance, exactly as the LW
- *    adapter `makeLwGeometryProvider` does. This is the bridge that makes
- *    the chart-engine swap possible without touching `drawCisdOverlays`
- *    or `InteractiveLiveChart`.
- *
- *  - `makeKlineLwTvShim(chart)` exposes the same structural shape as
- *    `LwTvChartApi` + `LwTvPriceSeriesApi` from `utils/lwChartTvLabels.ts`,
- *    in case a future caller wants to reuse that helper directly without
- *    a parallel klineTvLabels module. KlineInteractiveLiveChart uses
- *    klineTvLabels for now; the shim is kept for flexibility.
+ *    so `drawCisdOverlays` can position its HTML overlays against a
+ *    klinecharts instance.
  */
 import {
   ActionType,
@@ -352,11 +343,8 @@ function readSingleCoord(out: unknown): PartialCoord | null {
 /**
  * Build a `CisdGeometryProvider` backed by a klinecharts instance.
  *
- * Mirrors the contract of `makeLwGeometryProvider` in
- * `utils/drawCisdOverlays.ts`: time→x, price→y, range subscription. The
- * abstraction was introduced in PR #7 specifically so the CISD overlay
- * code wouldn't need to know whether it's running against
- * lightweight-charts or klinecharts.
+ * Provides the time→x, price→y, range-subscription contract that
+ * `drawCisdOverlays` needs to position its HTML labels.
  *
  * Caveats observed in the feasibility report:
  *   - `convertToPixel` returns a Partial<Coordinate>; either coord may be

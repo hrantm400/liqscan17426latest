@@ -1,15 +1,7 @@
 /**
- * Pure RSI / pivot / divergence helpers — extracted verbatim from
- * `InteractiveLiveChart.tsx` (lines 22-180 of the LW implementation) so the
- * kline path can call the exact same math without duplicating it inline.
- *
- * The LW component still has its OWN local copies (per the migration
- * protocol's "NO modification to InteractiveLiveChart.tsx" rule). Once the
- * LW path is removed in Chunk #8, these helpers stay and the local copies
- * disappear with the LW component — no duplication tax post-migration.
- *
- * No klinecharts / lightweight-charts imports here on purpose — this is
- * pure number-crunching, engine-independent.
+ * Pure RSI / pivot / divergence helpers — engine-independent number
+ * crunching. Used by InteractiveLiveChart for the RSI sub-pane and
+ * divergence trend lines on RSI-divergence signals.
  */
 
 /**

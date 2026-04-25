@@ -1,4 +1,7 @@
-import type { Time } from 'lightweight-charts';
+// Local alias for the legacy LW-shaped time field — the original
+// drawCisdOverlays / klineCisdAdapter contract speaks in unix seconds
+// (LW's `Time`). Kept as a plain number after the migration.
+type Time = number;
 import {
   chartTimeAtOrBefore,
   type CisdGeometryProvider,
