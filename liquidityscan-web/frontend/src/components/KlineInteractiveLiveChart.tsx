@@ -320,6 +320,21 @@ export function KlineInteractiveLiveChart({
     const container = containerRef.current;
     if (!container) return;
 
+    // Reset the data-tracking fingerprint refs before every fresh init().
+    // Without this, toggling to the TradingView iframe and back disposes
+    // the old chart but leaves dataContextRef set to the prior
+    // `${symbol}|${tf}` — the data effect then takes its "continuation"
+    // branch and calls updateData(lastBar) on the empty new chart instead
+    // of applyNewData(full dataset). Visible symptoms: chart shows 1 bar,
+    // RSI is NaN (needs 14+ bars), divergence overlays anchor to indices
+    // off-screen, entry-price line draws into a 1-bar pane. Same failure
+    // would hit non-RSI signals (CISD, SE) — the fingerprint doesn't
+    // branch on signal type. overlayIdsRef + cisdCleanupRef are already
+    // cleared by the cleanup below; we don't double-reset them here.
+    dataContextRef.current = '';
+    lastBarTsRef.current = 0;
+    lastBarCountRef.current = 0;
+
     const chart = init(container, { styles: buildStyles(isDark) });
     if (!chart) return;
     chartRef.current = chart;
