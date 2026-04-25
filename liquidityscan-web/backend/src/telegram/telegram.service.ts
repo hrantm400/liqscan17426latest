@@ -253,17 +253,32 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
                 }
             }
 
-            const png = await this.chartPlaywright.renderCandlestickPng(candlesLw, {
-                signalType,
-                price,
-                symbol,
-                timeframe: normTf,
-                strategyType,
-                id: signalId,
-                signalCandleIdx,
-                metadata,
-                ...seFields,
-            });
+            // SE signals get a larger 1280×640 canvas so the SL/TP
+            // labels have room to breathe even when prices are tight
+            // (e.g. ETHUSDT 4h SL/TP1/TP2/TP3 spans <1%). Other signal
+            // types stay on the 920×440 default — bumped per-strategy
+            // when their visual surface needs it (Phase B-D).
+            const isSeSignal =
+                typeof signalId === 'string' && signalId.indexOf('SUPER_ENGULFING') === 0;
+            const dims = isSeSignal
+                ? { width: 1280, height: 640 }
+                : { width: 920, height: 440 };
+
+            const png = await this.chartPlaywright.renderCandlestickPng(
+                candlesLw,
+                {
+                    signalType,
+                    price,
+                    symbol,
+                    timeframe: normTf,
+                    strategyType,
+                    id: signalId,
+                    signalCandleIdx,
+                    metadata,
+                    ...seFields,
+                },
+                dims,
+            );
             if (png) return png;
         }
 

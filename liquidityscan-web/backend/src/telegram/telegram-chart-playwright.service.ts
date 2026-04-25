@@ -96,9 +96,13 @@ export class TelegramChartPlaywrightService implements OnModuleDestroy {
         return this.browserLaunch;
     }
 
-    async renderCandlestickPng(candles: OhlcCandle[], signal: TelegramChartSignal): Promise<Buffer | null> {
+    async renderCandlestickPng(
+        candles: OhlcCandle[],
+        signal: TelegramChartSignal,
+        dims: { width: number; height: number } = { width: 920, height: 440 },
+    ): Promise<Buffer | null> {
         if (this.disabled() || !candles?.length) return null;
-        return this.enqueue(() => this.renderInner(candles, signal));
+        return this.enqueue(() => this.renderInner(candles, signal, dims));
     }
 
     private enqueue<T>(fn: () => Promise<T>): Promise<T> {
@@ -118,14 +122,24 @@ export class TelegramChartPlaywrightService implements OnModuleDestroy {
         return [...map.values()].sort((a, b) => a.timestamp - b.timestamp);
     }
 
-    private async renderInner(candles: OhlcCandle[], signal: TelegramChartSignal): Promise<Buffer | null> {
+    private async renderInner(
+        candles: OhlcCandle[],
+        signal: TelegramChartSignal,
+        dims: { width: number; height: number },
+    ): Promise<Buffer | null> {
         const browser = await this.getBrowser();
         if (!browser) return null;
-        const page = await browser.newPage({ viewport: { width: 920, height: 460 }, deviceScaleFactor: 1 });
+        const { width, height } = dims;
+        // Viewport gets +20px headroom for body margin / browser layout
+        // (matches the original 920×460-vs-440 offset).
+        const page = await browser.newPage({
+            viewport: { width, height: height + 20 },
+            deviceScaleFactor: 1,
+        });
         try {
             await page.goto('about:blank');
             await page.addStyleTag({
-                content: 'body{margin:0;background:#0b140d;}#c{width:920px;height:440px}',
+                content: `body{margin:0;background:#0b140d;}#c{width:${width}px;height:${height}px}`,
             });
             await page.evaluate(() => {
                 document.body.innerHTML = '<div id="c"></div>';
@@ -199,23 +213,25 @@ export class TelegramChartPlaywrightService implements OnModuleDestroy {
                                         align: 'center',
                                         baseline: isUp ? 'top' : 'bottom',
                                     },
-                                    // klinecharts default text figure styles include
-                                    // backgroundColor + borderSize:1 + padding:4 — that
-                                    // would render a filled blue pill behind every
-                                    // label. Explicit overrides strip all of it so the
-                                    // text floats on the dark canvas, matching LW's
-                                    // bare arrow-marker text.
+                                    // Subtle dark pill behind the colored
+                                    // text — same recipe as the SE-line
+                                    // labels below for visual consistency.
+                                    // The klinecharts default backgroundColor
+                                    // is bright blue and would dominate; we
+                                    // want a low-opacity black so the colored
+                                    // text accent stays readable against any
+                                    // candle body.
                                     styles: {
                                         color: ext.color,
                                         size: 12,
                                         weight: 'bold',
                                         family: 'sans-serif',
-                                        backgroundColor: 'transparent',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.65)',
                                         borderSize: 0,
-                                        paddingLeft: 0,
-                                        paddingRight: 0,
-                                        paddingTop: 0,
-                                        paddingBottom: 0,
+                                        paddingLeft: 3,
+                                        paddingRight: 3,
+                                        paddingTop: 1,
+                                        paddingBottom: 1,
                                     },
                                 },
                             ];
@@ -244,22 +260,29 @@ export class TelegramChartPlaywrightService implements OnModuleDestroy {
                                     type: 'text',
                                     attrs: {
                                         x: p.x + 2,
-                                        y: p.y - 3,
+                                        y: p.y - 6,
                                         text: String(ext.text || ''),
                                         align: 'left',
                                         baseline: 'bottom',
                                     },
+                                    // Subtle dark pill behind the colored text
+                                    // so labels stay readable against candle
+                                    // bodies. NOT the default klinecharts blue
+                                    // pill — explicit semi-transparent black,
+                                    // tight padding, no border. Same recipe
+                                    // applied to the BUY/SELL arrow label
+                                    // below for visual consistency.
                                     styles: {
                                         color: ext.color || '#FFFFFF',
-                                        size: 10,
+                                        size: 11,
                                         weight: 'bold',
                                         family: 'sans-serif',
-                                        backgroundColor: 'transparent',
+                                        backgroundColor: 'rgba(0, 0, 0, 0.65)',
                                         borderSize: 0,
-                                        paddingLeft: 0,
-                                        paddingRight: 0,
-                                        paddingTop: 0,
-                                        paddingBottom: 0,
+                                        paddingLeft: 3,
+                                        paddingRight: 3,
+                                        paddingTop: 1,
+                                        paddingBottom: 1,
                                     },
                                 },
                             ];
@@ -451,7 +474,7 @@ export class TelegramChartPlaywrightService implements OnModuleDestroy {
             );
 
             await new Promise((r) => setTimeout(r, 500));
-            const buf = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width: 920, height: 440 } });
+            const buf = await page.screenshot({ type: 'png', clip: { x: 0, y: 0, width, height } });
             return Buffer.from(buf);
         } catch (e: unknown) {
             const msg = e instanceof Error ? e.message : String(e);
