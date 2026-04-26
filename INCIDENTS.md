@@ -67,6 +67,47 @@ Newest first.
 
 ---
 
+## 2026-04-26 (evening) — Stage 2 cascade incident + Stage 3 streaming fix → trilogy complete
+
+### Sequence
+- 17:53 — PR #35 (Stage 2 parallelization) merged → c298d1f1.
+- 17:55 → 18:08 — Stage 2 cold backfill triggered cascade of 3 pm2 restarts (pid 3576331 → 3584885 → 3585705 → 3586555). Process hit transient peak ~1.87GB during bootstrapStore Map allocation, exceeding `max_memory_restart: 1536M`. NOT a kernel OOM kill (system has 11GB RAM, 7GB free) — pm2 watchdog limit was set artificially low.
+- 18:45 — Memory bump applied: `--max-old-space-size` and `max_memory_restart` both 1536→2560 via `pm2 delete + start ecosystem.config.cjs`. PR #36 commits this to git.
+- 19:01 → 19:30 — 30-min RSS observation confirmed steady-state plateau at 1.5GB (no leak). False alarm earlier from V8 GC settling pattern.
+- 20:10 — PR #37 (Stage 3 streaming bootstrapStore) merged → c6aeba2.
+- 20:12 → 20:27 — Stage 3 deploy on cold-path (snapshots stale ~1h27m). Boot 105s, fetchAllCandles 704s, streaming load 65s, total startup sequence 12.8 min. **Peak RSS 729MB (vs 1.87GB pre-Stage 3 = 61% reduction). 0 restarts.**
+
+### Verified
+- Slow-boot trilogy ships fully:
+  - Stage 1 (PR #33): non-blocking onModuleInit + concurrency mutex
+  - Stage 2 (PR #35): parallelized REST + batch DB read
+  - Stage 3 (PR #37): streaming per-interval bootstrap
+  - Memory bump (PR #36): pm2 + V8 limits raised to 2560MB
+- Cascade-restart issue eliminated even at the original 1536MB limit (Stage 3 prevents the peak entirely)
+- Memory bump from PR #36 is now comfortable headroom (1.7GB free under 2560MB limit), not hard requirement
+- Streaming per-interval timings observed: 1h=14s, 4h=10s, 1d=5s, 1w=3.5s, 15m=10s, 5m=23s — total 65s for full DB load with 729MB peak
+
+### Trilogy complete metrics
+
+| Stage | Cold backfill | DB load | Peak RSS | Cascade restarts |
+|---|---|---|---|---|
+| 0 (original) | 22.5 min blocking | 256s sequential | n/a | n/a |
+| 1 (PR #33) | 22.5 min bg | 256s sequential bg | n/a | n/a |
+| 2 (PR #35) | 9-19 min bg | 21s parallel batch | 1.87 GB | 3 restarts |
+| 3 (PR #37) | 9-12 min bg | 65s streaming | 729 MB | 0 restarts |
+
+User-visible boot consistently ~90-105s across Stages 1-3 (gated by ~90s pre-NestFactory Node module load, NOT addressed in trilogy).
+
+### Action items remaining (deferred)
+1. Pre-NestFactory profiling: identify where the ~90s of Node module load goes. This is the next-largest target for boot time reduction.
+2. Zero-downtime deploy: pm2 cluster mode or blue-green setup to eliminate the 90-105s downtime entirely.
+3. Per-snapshot upsert batching: still single-row upserts in fetchAllCandles. Could batch with `$transaction` if profiling shows it as a bottleneck.
+4. PR #31 spot-check: visual verification of Telegram SE TP/SL overlays on next organic SE signal (4h close at 20:00 UTC).
+
+The slow-boot trilogy is done.
+
+---
+
 ## 2026-04-25 — Chart library migration completed
 
 Migrated from `lightweight-charts` to `klinecharts` across all chart surfaces (frontend signal page + Core-Layer mini tiles + FloatingChart wrapper + backend Telegram Playwright PNG renderer).
