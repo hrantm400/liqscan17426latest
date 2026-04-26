@@ -40,6 +40,33 @@ Newest first.
 
 ---
 
+## 2026-04-26 (later same day) — Slow-boot Stage 1 fix shipped + PR #31 re-deployed
+
+### Sequence
+- 16:11 — Built `feat/non-blocking-backfill` (commit f77d60e), merged as PR #33 (squash 94f5d97).
+- 16:13 — pm2 restart on PR #33 code. Boot took **94 seconds** (vs 8+ min previously). Port 4000 bound at 16:15:32.
+- 16:15 → 16:38 — Background startup sequence ran: REST backfill (1177s) + DB snapshot load (175s) + WS connect. Total 1354s (22.5 min) — but app served traffic the entire time.
+- 17:04 — Re-deployed PR #31 by reverting the revert (commit d502114). Boot took **94 seconds** again.
+- 17:05 → 17:10 — Background startup sequence on fresh snapshots: skipped REST fetch via `isFresh` gate, only DB load (256s) + WS connect. Total 259s. **5.2× faster** than first boot due to fast-path.
+
+### Verified
+- User-visible downtime per restart reduced from 22.5 min → 94s (93% reduction).
+- `bootstrapStore` fast-path triggered correctly when snapshots are fresh (<60min).
+- Telegram bot initialized, no Playwright/Chromium errors.
+- 566 symbols loaded, 17 WS connections, 3396 streams subscribed.
+- Zero errors during startup or runtime.
+
+### What ships
+- PR #33 (non-blocking backfill + concurrency mutex) — Stage 1.
+- PR #31 (Telegram SE TP/SL overlays) — re-deployed on top of PR #33, finally in production.
+
+### Action items remaining
+1. Stage 2 PR (deferred): optimize `fetchAllCandles` itself — remove 2s sleeps between chunks, parallelize chunk processing. Target: cold-start backfill from 19.6 min → <2 min. Same target on `bootstrapStore` 3438 sequential DB reads → batch with `findMany`.
+2. Boot timing instrumentation (deferred): add `console.log` timestamps in `main.ts` pre-NestFactory phase to identify where the unavoidable 90s of Node module load comes from.
+3. Zero-downtime deploy investigation (deferred): pm2 cluster mode or blue-green to eliminate the 94s downtime entirely.
+
+---
+
 ## 2026-04-25 — Chart library migration completed
 
 Migrated from `lightweight-charts` to `klinecharts` across all chart surfaces (frontend signal page + Core-Layer mini tiles + FloatingChart wrapper + backend Telegram Playwright PNG renderer).
