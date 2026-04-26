@@ -1,9 +1,10 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import * as TelegramBot from 'node-telegram-bot-api';
 import { PrismaService } from '../prisma/prisma.service';
-import satori from 'satori';
-import { html } from 'satori-html';
-import { Resvg } from '@resvg/resvg-js';
+// Stage 5 (2026-04-26): satori, satori-html, resvg-js are dynamically loaded
+// inside generateSignalCard() — see method body. These libraries cost ~2-3s
+// of cold boot time and are only needed when Telegram falls back to SVG/PNG
+// rendering (rare path after Playwright migration in PR #30). See INCIDENTS.md.
 import * as fs from 'fs';
 import * as path from 'path';
 import { CandlesService, CandleDto } from '../candles/candles.service';
@@ -370,6 +371,14 @@ export class TelegramService implements OnModuleInit, OnModuleDestroy {
                 </div>
             </div>
         `;
+
+        // Stage 5 (2026-04-26): lazy-load heavy rendering libs only when
+        // this fallback path actually executes. Saves ~2-3s on cold boot.
+        const [{ default: satori }, { html }, { Resvg }] = await Promise.all([
+            import('satori'),
+            import('satori-html'),
+            import('@resvg/resvg-js'),
+        ]);
 
         const markup = html(markupHtml as any);
 
