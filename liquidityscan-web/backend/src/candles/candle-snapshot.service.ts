@@ -77,31 +77,28 @@ export class CandleSnapshotService {
   }
 
   /**
-   * Stage 2 (2026-04-26): batch-read all snapshots in parallel partitioned queries
-   * (one per interval). Replaces 3438 sequential getSnapshot() awaits in BinanceWsManager
-   * with 6 findMany queries, cutting bootstrap DB phase from ~256s to ~5-15s.
+   * Stage 3 (2026-04-26): per-interval streaming load. Caller invokes this
+   * sequentially (once per interval) and copies into the live store between
+   * calls, allowing V8 to release the previous interval's Map before allocating
+   * the next one. Peak memory drops from ~700MB (full Map of all 6 intervals)
+   * to ~120MB (single interval), eliminating the transient peak in
+   * BinanceWsManager.bootstrapStore that previously triggered pm2 cascade
+   * restarts (see INCIDENTS.md, PR #36).
    *
-   * Returns Map keyed by `${symbol}:${interval}` → CandleData[].
+   * Returns Map keyed by symbol → CandleData[] for the given interval.
    */
-  async getAllSnapshots(): Promise<Map<string, CandleData[]>> {
-    const intervals = ['1h', '4h', '1d', '1w', '15m', '5m'];
+  async loadSnapshotsByInterval(interval: string): Promise<Map<string, CandleData[]>> {
     const result = new Map<string, CandleData[]>();
-
-    await Promise.all(
-      intervals.map(async (interval) => {
-        const rows = await this.prisma.candleSnapshot.findMany({
-          where: { interval },
-          select: { symbol: true, candles: true },
-        });
-        for (const row of rows) {
-          const candles = parseCandlesJson(row.candles);
-          if (candles.length > 0) {
-            result.set(`${row.symbol}:${interval}`, candles);
-          }
-        }
-      }),
-    );
-
+    const rows = await this.prisma.candleSnapshot.findMany({
+      where: { interval },
+      select: { symbol: true, candles: true },
+    });
+    for (const row of rows) {
+      const candles = parseCandlesJson(row.candles);
+      if (candles.length > 0) {
+        result.set(row.symbol, candles);
+      }
+    }
     return result;
   }
 

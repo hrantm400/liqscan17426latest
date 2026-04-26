@@ -212,22 +212,31 @@ export class BinanceWsManager implements OnModuleInit, OnModuleDestroy {
       await this.candleFetchJob.fetchAllCandles();
     }
 
-    this.logger.log('BinanceWsManager: loading snapshots from DB into memory (batch read)...');
+    this.logger.log('BinanceWsManager: loading snapshots from DB into memory (streaming per-interval)...');
     const dbReadStartMs = Date.now();
-    const allSnapshots = await this.candleSnapshotService.getAllSnapshots();
-    const dbReadElapsedMs = Date.now() - dbReadStartMs;
     let loaded = 0;
-    for (const sym of this.symbols) {
-      for (const tf of INTERVALS) {
-        const candles = allSnapshots.get(`${sym}:${tf}`) ?? [];
-        if (candles.length > 0) {
+    const perIntervalTimings: string[] = [];
+
+    for (const tf of INTERVALS) {
+      const intervalStartMs = Date.now();
+      const intervalSnapshots = await this.candleSnapshotService.loadSnapshotsByInterval(tf);
+      let intervalLoaded = 0;
+      for (const sym of this.symbols) {
+        const candles = intervalSnapshots.get(sym);
+        if (candles && candles.length > 0) {
           this.store.set(storeKey(sym, tf), candles.slice(-CANDLE_HISTORY_LIMIT));
           loaded++;
+          intervalLoaded++;
         }
       }
+      const intervalElapsedMs = Date.now() - intervalStartMs;
+      perIntervalTimings.push(`${tf}=${intervalLoaded}/${intervalElapsedMs}ms`);
+      // intervalSnapshots goes out of scope here; V8 can reclaim before next iteration's allocation
     }
+
+    const dbReadElapsedMs = Date.now() - dbReadStartMs;
     this.logger.log(
-      `BinanceWsManager: loaded ${loaded} snapshot entries into memory (batch DB read took ${dbReadElapsedMs}ms)`
+      `BinanceWsManager: loaded ${loaded} snapshot entries into memory (streaming, total ${dbReadElapsedMs}ms; ${perIntervalTimings.join(' ')})`
     );
   }
 
