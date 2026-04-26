@@ -212,18 +212,23 @@ export class BinanceWsManager implements OnModuleInit, OnModuleDestroy {
       await this.candleFetchJob.fetchAllCandles();
     }
 
-    this.logger.log('BinanceWsManager: loading snapshots from DB into memory...');
+    this.logger.log('BinanceWsManager: loading snapshots from DB into memory (batch read)...');
+    const dbReadStartMs = Date.now();
+    const allSnapshots = await this.candleSnapshotService.getAllSnapshots();
+    const dbReadElapsedMs = Date.now() - dbReadStartMs;
     let loaded = 0;
     for (const sym of this.symbols) {
       for (const tf of INTERVALS) {
-        const candles = await this.candleSnapshotService.getSnapshot(sym, tf);
+        const candles = allSnapshots.get(`${sym}:${tf}`) ?? [];
         if (candles.length > 0) {
           this.store.set(storeKey(sym, tf), candles.slice(-CANDLE_HISTORY_LIMIT));
           loaded++;
         }
       }
     }
-    this.logger.log(`BinanceWsManager: loaded ${loaded} snapshot entries into memory`);
+    this.logger.log(
+      `BinanceWsManager: loaded ${loaded} snapshot entries into memory (batch DB read took ${dbReadElapsedMs}ms)`
+    );
   }
 
   // ── WebSocket connections ──────────────────────────────────

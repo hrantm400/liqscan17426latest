@@ -51,8 +51,10 @@ export class CandleFetchJob {
     }
 
     let upserted = 0;
-    const CHUNK = 4;
-    const DELAY_MS = 2000;
+    // Stage 2 (2026-04-26): bumped CHUNK 4→20 and removed DELAY_MS sleep.
+    // BinanceProvider.acquireRateSlot already FIFO-queues + 429-backoffs by weight,
+    // so the explicit sleep was redundant and added ~5 min of pure idle time per cold backfill.
+    const CHUNK = 20;
 
     for (let i = 0; i < symbols.length; i += CHUNK) {
       const chunk = symbols.slice(i, i + CHUNK);
@@ -85,9 +87,7 @@ export class CandleFetchJob {
         this.logger.log(`CandleFetchJob: persisted snapshots ${done}/${symbols.length} symbols...`);
       }
 
-      if (i + CHUNK < symbols.length) {
-        await new Promise((r) => setTimeout(r, DELAY_MS));
-      }
+      // Inter-chunk sleep removed — see CHUNK comment above.
     }
 
     const elapsedMs = Date.now() - start;
