@@ -9,6 +9,37 @@ Newest first.
 
 ---
 
+## 2026-04-26 — PR #31 deploy + 8-minute slow-boot incident, total 45 min downtime
+
+### Sequence
+- 13:07 — `pm2 restart liquidityscan-api` after PR #31 merge (commit 2f8038c). Process did not bind port 4000.
+- 13:13 — `pm2 delete` + `pm2 start` fresh. Process online but stuck. CPU 128%, RSS growing 350→430MB, but no `app.listen()`.
+- 13:23 — confirmed >15 minutes hanging. Diagnostics showed process active (Binance WS, Postgres writes), but `bufferLogs: true` delaying any output until `app.listen()` resolves.
+- 13:35 — confirmed real downtime via `nginx 8080 → 502`, port 4000 not listening. `api` (id 3) was unrelated SuperEngulfing legacy on 3001, not the same backend.
+- 13:38 — `git revert 2f8038c` → commit 1928b55 → push to origin/master.
+- 13:44 — `pm2 start` with revert code.
+- 13:52 — port 4000 bound. Boot took ~8 minutes on revert code.
+- 13:52 → 14:01 — sanity checked: HTTP 200 on local + public, Telegram bot initialized OK, Core Layer scanning 206 pairs, no errors in logs. NestFactory phase took <1s — slow boot is in pre-NestFactory module evaluation phase.
+
+### Root cause analysis
+- PR #31 was NOT the primary cause. Revert code also took 8 minutes to boot.
+- Confirmed: this is the same slow-boot regression first documented 25 Apr (~7 minutes baseline).
+- Today's boot slightly worse: ~8 minutes vs 7 prior.
+- Boot timing data narrows the hypothesis: NestFactory bootstrap took <1s. The 8 minutes is in pre-NestFactory work (Node startup, ESM/CJS module evaluation, initial WS connections, Binance backfill) — NOT in NestJS module init or Lifecycle services.
+- Hypothesis (unverified): cold cache + Binance kline backfill scope grew with Core Layer pair count (206 pairs scanned per cycle).
+
+### Remediation
+- Reverted PR #31 (commit 1928b55). Telegram SE TP/SL overlays NOT in production.
+- PR #31 to be re-deployed AFTER slow-boot root cause is fixed.
+- Total downtime: ~45 minutes (13:07 → 13:52).
+
+### Action items (deferred)
+1. Investigate root cause of 8-minute boot. Boot timing data narrows scope to pre-NestFactory phase. Likely candidates: synchronous Binance kline backfill at startup, TickerCache cold load, or module import side effects.
+2. Add boot timing instrumentation: `console.log` with timestamps at top of `main.ts`, before NestFactory.create, after each major bootstrap step. This will identify which phase eats the 8 minutes.
+3. Investigate zero-downtime deploy options (pm2 cluster mode, blue-green) so future deploys don't require full restart and risk repeating this incident.
+
+---
+
 ## 2026-04-25 — Chart library migration completed
 
 Migrated from `lightweight-charts` to `klinecharts` across all chart surfaces (frontend signal page + Core-Layer mini tiles + FloatingChart wrapper + backend Telegram Playwright PNG renderer).
