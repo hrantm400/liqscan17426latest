@@ -14,14 +14,19 @@
  * See TD-11 when profiling is needed (requires ProfilingIntegration +
  * tracesSampleRate > 0).
  */
+import { bootProfile } from './boot-profile';
+bootProfile('sentry.config: module entered');
+
 // Load .env here: this module runs BEFORE ConfigModule.forRoot() (because
 // Sentry must monkey-patch the http module before NestJS boots), so
 // process.env.SENTRY_DSN would otherwise be unset when read from .env files.
 // No-op if already loaded or the file is missing.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 require('dotenv').config();
+bootProfile('sentry.config: dotenv.config() done');
 
 import * as Sentry from '@sentry/node';
+bootProfile('sentry.config: @sentry/node imported');
 
 export const SENSITIVE_PATH_PARTS = [
   '/auth/',
@@ -103,11 +108,14 @@ export function beforeSend(event: Sentry.ErrorEvent): Sentry.ErrorEvent | null {
 }
 
 export function initSentry(): void {
+  bootProfile('sentry.config: initSentry() entered');
   const dsn = process.env.SENTRY_DSN;
   if (!dsn) {
+    bootProfile('sentry.config: initSentry() skipped (no DSN)');
     return;
   }
 
+  bootProfile('sentry.config: Sentry.init() about to call');
   Sentry.init({
     dsn,
     environment: process.env.NODE_ENV || 'development',
@@ -115,9 +123,11 @@ export function initSentry(): void {
     sendDefaultPii: false,
     beforeSend,
   });
+  bootProfile('sentry.config: Sentry.init() returned');
 
   // eslint-disable-next-line no-console
   console.log(`[sentry] Initialized with DSN ending in ${dsn.slice(-8)}`);
 }
 
 initSentry();
+bootProfile('sentry.config: module fully loaded (initSentry() returned)');

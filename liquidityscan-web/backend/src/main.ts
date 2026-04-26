@@ -1,8 +1,15 @@
+// Stage 4 — boot profiling: this MUST be the first import so PROCESS_SPAWN_MS
+// is captured before any other module loads. Subsequent files import bootProfile
+// from this module and share the same baseline.
+import { bootProfile } from './common/boot-profile';
+bootProfile('main.ts: imports starting (sentry next)');
+
 // PR 3.2: side-effect import — Sentry.init MUST run before any @nestjs/*
 // or http module loads so auto-instrumentation can monkey-patch them.
 // Do NOT reorder. Do NOT convert to a named import. Sentry is dormant
 // when SENTRY_DSN is unset.
 import './common/sentry.config';
+bootProfile('main.ts: sentry.config imported');
 
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
@@ -17,9 +24,12 @@ import { AllExceptionsFilter } from './common/all-exceptions.filter';
 const cookieParser = require('cookie-parser') as () => (req: any, res: any, next: any) => void;
 
 async function bootstrap() {
+  bootProfile('bootstrap() entered');
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  bootProfile('NestFactory.create() returned (all OnModuleInit ran)');
 
   app.useLogger(app.get(PinoLogger));
+  bootProfile('useLogger(PinoLogger) — pino now active, buffered logs flushed');
   app.useGlobalFilters(new AllExceptionsFilter());
 
   app.use(cookieParser());
@@ -148,10 +158,13 @@ async function bootstrap() {
   const port = Number(process.env.PORT) || 3000;
   const host = process.env.LISTEN_HOST ?? '127.0.0.1';
   await app.listen(port, host);
+  bootProfile(`app.listen() resolved on ${host}:${port} — port bound`);
   app.get(PinoLogger).log(
     { host, port, env: process.env.NODE_ENV },
     'Application bootstrap complete',
   );
+  bootProfile('bootstrap() exiting');
 }
 
+bootProfile('main.ts: all imports loaded, calling bootstrap()');
 bootstrap();
