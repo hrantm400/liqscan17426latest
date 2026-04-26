@@ -76,6 +76,35 @@ export class CandleSnapshotService {
     return all.slice(-n);
   }
 
+  /**
+   * Stage 2 (2026-04-26): batch-read all snapshots in parallel partitioned queries
+   * (one per interval). Replaces 3438 sequential getSnapshot() awaits in BinanceWsManager
+   * with 6 findMany queries, cutting bootstrap DB phase from ~256s to ~5-15s.
+   *
+   * Returns Map keyed by `${symbol}:${interval}` → CandleData[].
+   */
+  async getAllSnapshots(): Promise<Map<string, CandleData[]>> {
+    const intervals = ['1h', '4h', '1d', '1w', '15m', '5m'];
+    const result = new Map<string, CandleData[]>();
+
+    await Promise.all(
+      intervals.map(async (interval) => {
+        const rows = await this.prisma.candleSnapshot.findMany({
+          where: { interval },
+          select: { symbol: true, candles: true },
+        });
+        for (const row of rows) {
+          const candles = parseCandlesJson(row.candles);
+          if (candles.length > 0) {
+            result.set(`${row.symbol}:${interval}`, candles);
+          }
+        }
+      }),
+    );
+
+    return result;
+  }
+
   async deleteAllSnapshots(): Promise<number> {
     const r = await this.prisma.candleSnapshot.deleteMany({});
     return r.count;
