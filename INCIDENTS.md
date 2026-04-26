@@ -108,6 +108,100 @@ The slow-boot trilogy is done.
 
 ---
 
+## 2026-04-26 (late evening) — Pre-NestFactory profiling + Stage 5 satori lazy-load
+
+### Why
+After slow-boot trilogy (Stages 1-3) shipped, user-visible boot stabilized at ~89s. NestFactory.create itself measures <1s. The remaining ~89s is in pre-NestFactory phase: Node module load + top-level imports + side-effect code in sentry.config.ts.
+
+We instrumented this phase to identify the actual bottleneck instead of guessing.
+
+### Boot profiling instrumentation (PR #39)
+- `src/common/boot-profile.ts`: bootProfile(label) helper using process.uptime() baseline. Writes to stderr to bypass NestJS bufferLogs and Pino so timing isn't distorted by logger machinery.
+- 14 wall-clock markers added to main.ts and sentry.config.ts.
+- Optional deep require() hook (boot-profile-require-hook.cjs) — wraps Module._load to log every require() with timing. Activated via node_args, not enabled by default.
+
+### Cold boot breakdown (89s)
+| Phase | Time | % |
+|---|---|---|
+| Node startup + boot-profile load | 4.4s | 5% |
+| @sentry/node import | 18.4s | 21% |
+| Other top-level imports (NestJS + AppModule + 18 modules + Prisma) | 52.8s | 59% |
+| NestFactory.create (provider init + OnModuleInit) | 4.2s | 5% |
+| Middleware + listen | 4.2s | 5% |
+| Other smaller phases | ~5s | 5% |
+
+80% of boot is module imports (sentry SDK + NestJS module tree). NestFactory init is small (5%).
+
+### Deep require() profile findings
+Top heavy modules (warm boot, self time):
+- lodash internals: ~1.5s
+- Sentry SDK + auto-instrumentations: ~1.0s visible (4.7s total import)
+- NestJS framework + RxJS: ~2.0s
+- crypto + passport-google + jsonwebtoken: ~1.0s
+- satori chain (satori + readable-stream + bluebird + linebreak + tldts + psl): ~2-3s
+- our controllers (signals + scanner): ~450ms
+- readable-stream (multiple instances from telegram libs): ~700ms total
+
+Sentry was loading instrumentation modules for libraries we don't even use:
+- `./integrations/tracing/mysql.js` (we use Postgres)
+- `./integrations/tracing/mysql2.js`
+- `./integrations/mcp-server/index.js`
+- `./ai/gen-ai-attributes.js`
+
+### Stage 5 actions taken
+
+#### Op 1 (Sentry filter) — DROPPED
+Investigation: `Sentry.init({ integrations: [...] })` runs AFTER all integration modules are already loaded. Filter saves only ~100-200ms, not the 18s. Switching to @sentry/core would lose HTTP request auto-instrumentation. Not worth refactor risk.
+
+#### Op 2 (lazy satori chain) — SHIPPED (PR #40)
+Moved `satori`, `satori-html`, `@resvg/resvg-js` from static top-level imports to dynamic `await import()` inside `TelegramService.generateSignalCard()`. These libraries are only used in legacy SVG/PNG fallback render path; after Playwright migration (PR #30) this path rarely executes.
+
+Theoretical savings: 2-4s cold boot.
+
+### Verification verdict — HONEST
+Single-sample post-Stage-5 cold boot measured 95s vs PR #39 baseline 89s — variance dominates signal. Boot times across the day ranged 89s, 105s, 91s, 95s — natural ±5-10s variance from disk I/O, page cache, OS scheduling.
+
+Expected Stage 5 economy of 2-4s is below the variance threshold. We CANNOT empirically confirm or deny improvement from a single sample.
+
+What we CAN confirm:
+- Stage 5 code is in prod (commit 80a6b76)
+- Static satori imports removed (TS type check + grep verified)
+- Build clean, no errors
+- Process healthy: 0 restarts, RSS 756MB plateau (Stage 3 streaming benefit intact)
+- Theoretical justification sound: satori chain (~2s) no longer loads on every boot
+
+What we CANNOT confirm:
+- Numerical boot-time improvement
+- Would require multi-sample protocol (5-10 cold boots over days, compute mean) to see signal above variance
+
+### Action items remaining (truly deferred)
+1. NestJS module tree (52.8s, 59% of cold boot) — biggest remaining target. Would require lazy-loading feature modules (NestJS LazyModuleLoader pattern) and is significant architectural change.
+2. Multi-sample boot timing protocol — automate over a week to get reliable mean.
+3. Zero-downtime deploy: pm2 cluster mode or blue-green to eliminate boot downtime entirely (different problem from making boot faster).
+4. Per-snapshot upsert batching: still single-row upserts in fetchAllCandles.
+5. Spot-check PR #31 Telegram SE TP/SL overlays on next organic SE signal.
+
+### Trilogy + Stage 5 final summary
+
+| PR | Stage | Confirmed impact |
+|---|---|---|
+| #33 | 1 — non-blocking onModuleInit | ✅ 22.5min → 89s user-visible boot |
+| #35 | 2 — parallel REST + batch DB | ✅ background sequence 22.5min → 4-22min |
+| #36 | chore — pm2 memory limit 1536→2560 | ✅ cascade restart prevented |
+| #37 | 3 — streaming bootstrapStore | ✅ peak RSS 1.87GB → 729MB (61% reduction) |
+| #39 | profiling instrumentation | ✅ pre-NestFactory phase mapped |
+| #40 | 5 — lazy satori chain | ⚠️  shipped, single-sample variance > signal, theoretical 2-4s win |
+
+After this PR, baseline cold boot: ~89s ± variance.
+- 80% in module imports (architectural, hard to change)
+- 5% Node startup (baseline, not addressable)
+- 5% Sentry init (accepted as cost of error tracking)
+- 10% other small phases
+
+Day's work: 22.5min downtime → ~89s user downtime, peak RSS halved, cascade restart eliminated, mutex protection for concurrent fetches, full instrumentation for future work.
+
+---
+
 ## 2026-04-25 — Chart library migration completed
 
 Migrated from `lightweight-charts` to `klinecharts` across all chart surfaces (frontend signal page + Core-Layer mini tiles + FloatingChart wrapper + backend Telegram Playwright PNG renderer).
