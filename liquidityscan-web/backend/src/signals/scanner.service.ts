@@ -174,12 +174,19 @@ export class ScannerService implements OnModuleInit, OnModuleDestroy {
         const start = Date.now();
 
         try {
-            const wsReady = this.wsManager.isReady();
+            let wsReady = this.wsManager.isReady();
+            if (!wsReady) {
+                this.logger.warn('WS manager not ready — waiting up to 30s for background backfill to complete...');
+                wsReady = await this.wsManager.waitUntilReady(30_000);
+                if (wsReady) {
+                    this.logger.log('WS manager became ready while waiting — using memory candles (no REST fetch needed)');
+                }
+            }
             if (wsReady) {
                 this.logger.log('WS manager ready — reading candles from memory (no REST fetch needed)');
             } else {
-                this.logger.warn('WS manager not ready — falling back to REST fetch');
-                this.logger.log('CandleFetchJob: downloading klines into candle_snapshots...');
+                this.logger.warn('WS manager still not ready after 30s wait — falling back to REST fetch');
+                this.logger.log('CandleFetchJob: downloading klines into candle_snapshots (will dedupe via inFlight mutex if background backfill running)...');
                 const fetchResult = await this.candleFetchJob.fetchAllCandles();
                 this.logger.log(
                     `CandleFetchJob: done (${fetchResult.symbolCount} symbols, ${fetchResult.upsertedRows} rows, ${(fetchResult.elapsedMs / 1000).toFixed(1)}s)`,

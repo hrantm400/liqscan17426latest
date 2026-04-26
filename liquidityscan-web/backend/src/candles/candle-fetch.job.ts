@@ -6,6 +6,7 @@ import type { CandleData } from '../signals/indicators';
 @Injectable()
 export class CandleFetchJob {
   private readonly logger = new Logger(CandleFetchJob.name);
+  private inFlight: Promise<{ symbolCount: number; elapsedMs: number; upsertedRows: number }> | null = null;
 
   // Phase 7.3 — 15m/5m added for WS bootstrap parity. Limits tuned so
   // each TF has roughly the same calendar coverage as the hourly TF
@@ -29,6 +30,19 @@ export class CandleFetchJob {
    * Download klines for all USDT perpetual symbols into candle_snapshots (one row per symbol+interval).
    */
   async fetchAllCandles(): Promise<{ symbolCount: number; elapsedMs: number; upsertedRows: number }> {
+    if (this.inFlight) {
+      this.logger.log('fetchAllCandles: another invocation in progress, joining...');
+      return this.inFlight;
+    }
+    this.inFlight = this.doFetchAllCandles();
+    try {
+      return await this.inFlight;
+    } finally {
+      this.inFlight = null;
+    }
+  }
+
+  private async doFetchAllCandles(): Promise<{ symbolCount: number; elapsedMs: number; upsertedRows: number }> {
     const start = Date.now();
     const symbols = await this.candlesService.fetchSymbols();
     if (symbols.length === 0) {

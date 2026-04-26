@@ -65,6 +65,10 @@ export class BinanceWsManager implements OnModuleInit, OnModuleDestroy {
   private ready = false;
   private destroying = false;
   private subHourListeners = new Set<SubHourCloseListener>();
+  private readyResolver: (() => void) | null = null;
+  private readyPromise: Promise<void> = new Promise<void>((resolve) => {
+    this.readyResolver = resolve;
+  });
 
   constructor(
     private readonly candlesService: CandlesService,
@@ -91,6 +95,25 @@ export class BinanceWsManager implements OnModuleInit, OnModuleDestroy {
     return this.ready && this.enabled;
   }
 
+  async waitUntilReady(timeoutMs: number): Promise<boolean> {
+    if (this.ready && this.enabled) {
+      return true;
+    }
+    if (!this.enabled) {
+      return false;
+    }
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
+    const timeoutPromise = new Promise<false>((resolve) => {
+      timeoutHandle = setTimeout(() => resolve(false), timeoutMs);
+    });
+    const result = await Promise.race([
+      this.readyPromise.then(() => true as const),
+      timeoutPromise,
+    ]);
+    if (timeoutHandle) clearTimeout(timeoutHandle);
+    return result === true && this.enabled;
+  }
+
   /**
    * Phase 7.3 — register a listener fired once per 15m/5m kline close.
    * Returns an unregister function. Listeners that throw are logged and
@@ -108,13 +131,28 @@ export class BinanceWsManager implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     if (!this.enabled) {
       this.logger.warn('BinanceWsManager DISABLED (BINANCE_WS_ENABLED=false). Scanners will use REST fallback.');
+      if (this.readyResolver) {
+        this.readyResolver();
+        this.readyResolver = null;
+      }
       return;
     }
 
     try {
       this.symbols = await this.candlesService.fetchSymbols();
-      this.logger.log(`BinanceWsManager: ${this.symbols.length} symbols loaded`);
+      this.logger.log(
+        `BinanceWsManager: onModuleInit complete, ${this.symbols.length} symbols loaded. ` +
+        `Backfill + WS connect running in background — app.listen() will not be blocked.`
+      );
+      void this.startupSequence();
+    } catch (e) {
+      this.logger.error(`BinanceWsManager onModuleInit failed (symbols fetch): ${(e as Error).message}`);
+    }
+  }
 
+  private async startupSequence(): Promise<void> {
+    const startMs = Date.now();
+    try {
       await this.bootstrapStore();
       this.connectAll();
 
@@ -123,9 +161,18 @@ export class BinanceWsManager implements OnModuleInit, OnModuleDestroy {
       }, DB_FLUSH_INTERVAL_MS);
 
       this.ready = true;
-      this.logger.log('BinanceWsManager: ready (WS connected, store populated)');
+      if (this.readyResolver) {
+        this.readyResolver();
+        this.readyResolver = null;
+      }
+      const elapsedSec = Math.round((Date.now() - startMs) / 1000);
+      this.logger.log(`BinanceWsManager: ready (startup sequence took ${elapsedSec}s — WS connected, store populated)`);
     } catch (e) {
-      this.logger.error(`BinanceWsManager init failed: ${(e as Error).message}`);
+      const elapsedSec = Math.round((Date.now() - startMs) / 1000);
+      this.logger.error(
+        `BinanceWsManager: startup sequence FAILED after ${elapsedSec}s — ${(e as Error).message}. ` +
+        `Scanners will use REST fallback via fetchAllCandles mutex.`
+      );
     }
   }
 
